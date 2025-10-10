@@ -6,31 +6,31 @@
 - CMake 3.20+
 - Fortran compiler (gfortran, ifort, or ifx)
 
-### Build ppro-lib
+### Build ppro
 
 ```bash
-cd ppro-lib
+cd ppro
 mkdir build && cd build
 cmake ..
 make
 ```
 
-This creates `libppro.a` in `ppro-lib/build/lib/`
+This creates `libppro.a` in `ppro/build/lib/`
 
 ### Use with UFO
 
 #### Option 1: Development Mode (Recommended)
 
-Place ppro-lib next to UFO:
+Place ppro next to UFO:
 ```
 workspace/
-├── ppro-lib/
+├── ppro/
 └── ufo/
 ```
 
 In `ufo/CMakeLists.txt`, add:
 ```cmake
-add_subdirectory(${CMAKE_SOURCE_DIR}/../ppro-lib ppro-lib)
+add_subdirectory(${CMAKE_SOURCE_DIR}/../ppro ppro)
 target_link_libraries(ufo PUBLIC ppro)
 ```
 
@@ -43,9 +43,9 @@ make
 
 #### Option 2: Installed Library
 
-Install ppro-lib:
+Install ppro:
 ```bash
-cd ppro-lib/build
+cd ppro/build
 make install  # Installs to CMAKE_INSTALL_PREFIX
 ```
 
@@ -66,7 +66,7 @@ ctest -R ppro -V
 
 ## What's Next?
 
-1. **Add coefficient files**: Copy `*_coefs.txt` to `ppro-lib/fix/`
+1. **Add coefficient files**: Copy `*_coefs.txt` to `ppro/fix/`
 2. **Read the full guide**: See `INTEGRATION_GUIDE.md` for details
 3. **Check documentation**: See `README.md` for API reference
 

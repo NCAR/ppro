@@ -1,8 +1,10 @@
-# PPRO-LIB: Parameterized Polarimetric Radar Operator Library
+# PPRO: Parameterized Polarimetric Radar Operator Library
 
 ## Overview
 
-PPRO-LIB is an independent external library containing the core physics and computation modules for the Parameterized Polarimetric Radar Operator (P-PRO). This library has been extracted from the JEDI-UFO framework to improve modularity, maintainability, and code reusability.
+PPRO is an independent, standalone library for computing dual-polarization radar variables from atmospheric model state variables. The library provides a modular, reusable implementation of the Parameterized Polarimetric Radar Operator (P-PRO) that can be used in any numerical weather prediction or data assimilation system.
+
+This library can be used independently or integrated into data assimilation frameworks such as JEDI-UFO.
 
 ## Scientific Background
 
@@ -29,7 +31,7 @@ The operator computes dual-polarization radar variables including:
 ## Directory Structure
 
 ```
-ppro-lib/
+ppro/
 ├── CMakeLists.txt          # Main CMake build configuration
 ├── VERSION.cmake           # Version information
 ├── ppro-config.cmake.in    # CMake package config template
@@ -44,6 +46,10 @@ ppro-lib/
 │   ├── CMakeLists.txt
 │   ├── dualpol_op_mod.f90       # Core dual-pol operator module
 │   └── dualpol_op_tlad_mod.f90  # Tangent-linear and adjoint module
+├── examples/              # Standalone example programs
+│   ├── CMakeLists.txt
+│   ├── standalone_test.f90      # Comprehensive test/demo program
+│   └── README.md                # Examples documentation
 └── fix/                   # Coefficient data files
     ├── README.txt
     ├── sband_rain_coefs.txt
@@ -67,8 +73,8 @@ ppro-lib/
 ### Build Instructions
 
 ```bash
-# Clone or copy the ppro-lib directory
-cd ppro-lib
+# Clone or copy the ppro directory
+cd ppro
 
 # Create build directory
 mkdir build
@@ -88,30 +94,59 @@ make install
 
 - `OPENMP`: Enable OpenMP support (default: ON)
 - `BUILD_SHARED_LIBS`: Build shared libraries instead of static (default: OFF)
+- `BUILD_EXAMPLES`: Build standalone example programs (default: ON)
 - `CMAKE_INSTALL_PREFIX`: Installation prefix
 
 Example with custom options:
 ```bash
-cmake -DOPENMP=OFF -DCMAKE_INSTALL_PREFIX=/path/to/install ..
+cmake -DOPENMP=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/path/to/install ..
 ```
 
-## Integration with UFO
+### Running Examples
 
-To use ppro-lib with JEDI-UFO, you can integrate it in one of two ways:
+After building, run the standalone test:
+```bash
+cd build/bin
+./ppro_standalone_test
+```
 
-### Option 1: Using find_package (Recommended for production)
+See `examples/README.md` for more details on examples and how to write your own programs using PPRO.
 
-After installing ppro-lib, configure UFO with:
+## Usage
+
+### Standalone Usage
+
+The library can be used independently in any Fortran-based numerical weather prediction model:
+
+```fortran
+use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
+
+! Initialize coefficients (call once)
+call ppro_init_coefs()
+
+! Compute dual-pol variables for a grid point
+call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
+                        qr, qs, qg, zh, zdr, kdp, phv, &
+                        nr=nr)
+```
+
+### Integration with JEDI-UFO
+
+The library can also be integrated into JEDI-UFO for data assimilation applications:
+
+#### Option 1: Using find_package (Recommended for production)
+
+After installing ppro, configure UFO with:
 ```cmake
 find_package(PPRO REQUIRED)
 target_link_libraries(ufo PUBLIC ppro)
 ```
 
-### Option 2: Using add_subdirectory (Recommended for development)
+#### Option 2: Using add_subdirectory (Recommended for development)
 
-Place ppro-lib in your UFO source tree and use:
+Place ppro in your JEDI bundle and use:
 ```cmake
-add_subdirectory(ppro-lib)
+ecbuild_bundle(PROJECT ppro SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/ppro)
 target_link_libraries(ufo PUBLIC ppro)
 ```
 
@@ -163,12 +198,8 @@ call ufo_PPRO_sim1obs(iband, density_air, temp_air, &
 
 - **Zhiquan (Jake) Liu** (NCAR/MMM) - Original P-PRO implementation
 - **Hejun Xie** - Integration of P-PRO operator into JEDI-UFO framework
-- **Taosun Wei** - Adding hail categories and extended microphysics support
+- **Tao Sun** - Adding hail categories and extended microphysics support
 - **Rong Kong** (NCAR/MMM) - Bug fixes, operator tuning and testing, modularization and external library development
-
-## Contributors
-
-- Additional contributors from JCSDA and JEDI community
 
 ## License
 
@@ -185,10 +216,11 @@ which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
 For questions, issues, or contributions:
 - **Technical Lead**: Rong Kong (rkong@ucar.edu)
-- **JEDI Support**: jedi-support@ucar.edu
 - **Issues**: Please open an issue in the repository
 
 ## Acknowledgments
 
-This work is part of the Joint Center for Satellite Data Assimilation (JCSDA) and the Joint Effort for Data assimilation Integration (JEDI) project.
+This work was developed at the National Center for Atmospheric Research (NCAR), Mesoscale and Microscale Meteorology Laboratory (MMM).
+
+PPRO is designed as a general-purpose, standalone dual-polarization radar operator library. While it is compatible with data assimilation frameworks such as JEDI, it can be used independently in any numerical weather prediction system or forward operator application.
 

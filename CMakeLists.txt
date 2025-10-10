@@ -4,6 +4,7 @@ project(ppro VERSION 1.0.0 LANGUAGES Fortran)
 
 option(OPENMP "Build ppro with OpenMP support" ON)
 option(FIX_FILE_PATH "Path to coefficient files (default: fix/)" OFF)
+option(BUILD_EXAMPLES "Build standalone example programs" ON)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(CMAKE_DIRECTORY_LABELS ${PROJECT_NAME})
@@ -74,6 +75,11 @@ endif()
 
 ## Sources
 add_subdirectory(src)
+
+## Examples
+if(BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
 
 # Generate and configure the project config file
 configure_file(

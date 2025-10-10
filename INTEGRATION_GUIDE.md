@@ -1,6 +1,6 @@
 # PPRO-LIB Integration Guide for JEDI-UFO
 
-This guide describes how to integrate the modularized ppro-lib into JEDI-UFO.
+This guide describes how to integrate the modularized ppro library into JEDI-UFO.
 
 ## Overview of Modularization
 
@@ -18,7 +18,7 @@ ufo/src/ufo/operators/radarreflectivity/ppro/
 
 **After (Modular)**:
 ```
-ppro-lib/                           (External library)
+ppro/                           (External library)
 └── src/
     ├── dualpol_op_mod.f90         (Core physics)
     └── dualpol_op_tlad_mod.f90    (TL/AD)
@@ -26,15 +26,15 @@ ppro-lib/                           (External library)
 ufo/src/ufo/operators/radarreflectivity/ppro/
 ├── ObsPPRO.cc/.h                   (C++ interface)
 ├── ObsPPRO.interface.F90/.h        (Fortran-C++ bridge)
-└── ufo_PPRO_mod.F90                (High-level operator - links to ppro-lib)
+└── ufo_PPRO_mod.F90                (High-level operator - links to ppro)
 ```
 
 ## Integration Steps
 
-### Step 1: Build ppro-lib
+### Step 1: Build ppro
 
 ```bash
-cd ppro-lib
+cd ppro
 mkdir build && cd build
 cmake -DCMAKE_INSTALL_PREFIX=/path/to/install ..
 make
@@ -62,11 +62,11 @@ cmake -DPPRO_ROOT=/path/to/ppro/install ..
 
 #### Option B: Using add_subdirectory (Development)
 
-Place ppro-lib in your workspace and add to UFO's CMakeLists.txt:
+Place ppro in your workspace and add to UFO's CMakeLists.txt:
 
 ```cmake
 # Add ppro as a subdirectory
-add_subdirectory(${CMAKE_SOURCE_DIR}/../ppro-lib ppro-lib)
+add_subdirectory(${CMAKE_SOURCE_DIR}/../ppro ppro)
 
 # Link UFO with ppro
 target_link_libraries(ufo PUBLIC ppro)
@@ -74,7 +74,7 @@ target_link_libraries(ufo PUBLIC ppro)
 
 ### Step 3: Update Module Paths
 
-The Fortran modules from ppro-lib will be automatically available through the CMake target interface.
+The Fortran modules from ppro will be automatically available through the CMake target interface.
 
 If you need to explicitly set paths, add:
 ```cmake
@@ -106,7 +106,7 @@ The module should already have:
 use dualpol_op_mod
 ```
 
-This will now link to the external ppro-lib instead of a local module.
+This will now link to the external ppro instead of a local module.
 
 **No code changes are needed** in `ufo_PPRO_mod.F90` if the module names remain the same.
 
@@ -117,13 +117,13 @@ Similarly, the TL/AD module uses:
 use dualpol_op_tlad_mod
 ```
 
-This will automatically link to ppro-lib.
+This will automatically link to ppro.
 
 ## Directory Structure After Integration
 
 ```
 workspace/
-├── ppro-lib/                      # External library
+├── ppro/                      # External library
 │   ├── CMakeLists.txt
 │   ├── src/
 │   │   ├── dualpol_op_mod.f90
@@ -136,12 +136,12 @@ workspace/
         ├── CMakeLists.txt        # Modified (removed core modules)
         ├── ObsPPRO.cc/.h
         ├── ObsPPRO.interface.F90
-        └── ufo_PPRO_mod.F90      # Uses ppro-lib modules
+        └── ufo_PPRO_mod.F90      # Uses ppro modules
 ```
 
 ## Coefficient Files
 
-The ppro-lib requires coefficient files for S-band and C-band radars.
+The ppro requires coefficient files for S-band and C-band radars.
 
 ### Option 1: Absolute Path
 
@@ -149,13 +149,13 @@ Set the coefficient file path at runtime or in the YAML configuration:
 ```yaml
 obs operator:
   name: PPRO
-  coefficient_path: /path/to/ppro-lib/fix
+  coefficient_path: /path/to/ppro/fix
 ```
 
 ### Option 2: Environment Variable
 
 ```bash
-export PPRO_COEF_PATH=/path/to/ppro-lib/fix
+export PPRO_COEF_PATH=/path/to/ppro/fix
 ```
 
 ### Option 3: Relative Path
@@ -169,7 +169,7 @@ call read_coefs_rain('/path/to/sband_rain_coefs.txt', sband_rain_coefs)
 
 After integration, test with:
 
-1. **Build test**: Ensure UFO compiles with ppro-lib
+1. **Build test**: Ensure UFO compiles with ppro
 2. **Unit test**: Run existing P-PRO operator tests
 3. **Integration test**: Run JEDI applications using P-PRO
 
@@ -186,7 +186,7 @@ ctest -R ppro
 Error: Can't open module file 'dualpol_op_mod.mod'
 ```
 
-**Solution**: Ensure ppro-lib is properly installed and the module path is included:
+**Solution**: Ensure ppro is properly installed and the module path is included:
 ```cmake
 target_include_directories(ufo PUBLIC ${PPRO_ROOT}/include/ppro)
 ```
@@ -209,34 +209,34 @@ Error opening file: sband_rain_coefs.txt
 ```
 
 **Solution**: 
-1. Check that coefficient files exist in `ppro-lib/fix/`
+1. Check that coefficient files exist in `ppro/fix/`
 2. Verify the file paths in `dualpol_op_mod.f90`
 3. Run from the correct directory or use absolute paths
 
 ## Comparison with CRTM Integration
 
-The ppro-lib integration follows the same pattern as CRTM in UFO:
+The ppro integration follows the same pattern as CRTM in UFO:
 
 | Aspect | CRTM | PPRO |
 |--------|------|------|
-| External library | `crtm-lib` | `ppro-lib` |
+| External library | `crtm-lib` | `ppro` |
 | UFO interface | `ufo_radiancecrtm_mod.F90` | `ufo_PPRO_mod.F90` |
 | Core modules | CRTM_Module | dualpol_op_mod |
 | Integration | `find_package(CRTM)` | `find_package(PPRO)` |
-| Coefficient files | `crtm-lib/fix/` | `ppro-lib/fix/` |
+| Coefficient files | `crtm-lib/fix/` | `ppro/fix/` |
 
 ## Benefits of Modularization
 
 1. **Separation of Concerns**: Physics code separate from UFO interface
-2. **Reusability**: ppro-lib can be used in other projects
+2. **Reusability**: ppro can be used in other projects
 3. **Maintainability**: Easier to update core physics independently
 4. **Testing**: Core algorithms can be tested independently
-5. **Version Control**: ppro-lib can have its own version/release cycle
+5. **Version Control**: ppro can have its own version/release cycle
 
 ## Future Enhancements
 
 1. Add Python bindings for standalone testing
-2. Create regression test suite for ppro-lib
+2. Create regression test suite for ppro
 3. Add more microphysics schemes (e.g., Morrison, P3)
 4. Optimize performance with vectorization/GPU support
 5. Add automated coefficient file generation tools

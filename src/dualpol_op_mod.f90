@@ -1135,7 +1135,7 @@ end function lin_interp
   ! ==============================================================================
   !> @brief High-level interface: Compute dual-pol variables for one observation
   !>
-  !> This is the main API for ppro-lib. It encapsulates all physical computations
+  !> This is the main API for ppro library. It encapsulates all physical computations
   !> including melting layer treatment and aggregation of all hydrometeor types.
   !>
   !> @param[in]  iband         Radar band: 1=S-band, 2=C-band
