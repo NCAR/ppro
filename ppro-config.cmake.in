@@ -1,0 +1,23 @@
+# ppro-config.cmake.in
+
+include(CMakeFindDependencyMacro)
+# No external dependencies required for ppro currently
+
+if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/ppro-targets.cmake)
+  set(ppro_IMPORT_FILE "${CMAKE_CURRENT_LIST_DIR}/ppro-targets.cmake")
+  include(${ppro_IMPORT_FILE})
+endif()
+
+set(ppro_VERSION           "@PROJECT_VERSION@")
+
+#Export Fortran compiler version for checking module compatibility
+set(@PROJECT_NAME@_MODULES_Fortran_COMPILER_ID @CMAKE_Fortran_COMPILER_ID@)
+set(@PROJECT_NAME@_MODULES_Fortran_COMPILER_VERSION @CMAKE_Fortran_COMPILER_VERSION@)
+if(NOT @PROJECT_NAME@_MODULES_Fortran_COMPILER_ID STREQUAL CMAKE_Fortran_COMPILER_ID
+   OR NOT @PROJECT_NAME@_MODULES_Fortran_COMPILER_VERSION VERSION_EQUAL CMAKE_Fortran_COMPILER_VERSION)
+    message(SEND_ERROR "Package @PROJECT_NAME@ provides Fortran modules built with "
+            "${@PROJECT_NAME@_MODULES_Fortran_COMPILER_ID}-${@PROJECT_NAME@_MODULES_Fortran_COMPILER_VERSION} "
+            "but this build for ${PROJECT_NAME} uses incompatible compiler ${CMAKE_Fortran_COMPILER_ID}-${CMAKE_Fortran_COMPILER_VERSION}")
+endif()
+
+

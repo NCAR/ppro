@@ -1,0 +1,204 @@
+# PPRO-LIB: Parameterized Polarimetric Radar Operator Library
+
+## Overview
+
+PPRO-LIB is an independent external library containing the core physics and computation modules for the Parameterized Polarimetric Radar Operator (P-PRO). This library has been extracted from the JEDI-UFO framework to improve modularity, maintainability, and code reusability.
+
+## Scientific Background
+
+The P-PRO operator is based on the parameterized forward operators for polarimetric radar data described in:
+
+> Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
+
+The operator computes dual-polarization radar variables including:
+- **Zhh**: Horizontal reflectivity (dBZ)
+- **ZDR**: Differential reflectivity (dB)
+- **KDP**: Specific differential phase (deg/km)
+- **ρhv**: Copolar correlation coefficient
+
+## Features
+
+- Support for multiple microphysics schemes:
+  - Thompson (double-moment for rain)
+  - WSM6 (single-moment)
+  - NSSL (double-moment with hail)
+- S-band and C-band radar frequencies
+- Melting layer treatment following Zhang et al. (2024)
+- Pure and melting hydrometeor categories (rain, snow, graupel, hail)
+
+## Directory Structure
+
+```
+ppro-lib/
+├── CMakeLists.txt          # Main CMake build configuration
+├── VERSION.cmake           # Version information
+├── ppro-config.cmake.in    # CMake package config template
+├── README.md              # This file
+├── LICENSE                # License information
+├── cmake/                 # CMake modules
+│   ├── ppro_compiler_flags.cmake
+│   ├── compiler_flags_GNU_Fortran.cmake
+│   ├── compiler_flags_Intel_Fortran.cmake
+│   └── compiler_flags_IntelLLVM_Fortran.cmake
+├── src/                   # Source code
+│   ├── CMakeLists.txt
+│   ├── dualpol_op_mod.f90       # Core dual-pol operator module
+│   └── dualpol_op_tlad_mod.f90  # Tangent-linear and adjoint module
+└── fix/                   # Coefficient data files
+    ├── README.txt
+    ├── sband_rain_coefs.txt
+    ├── sband_snow_coefs.txt
+    ├── sband_graupel_coefs.txt
+    ├── sband_hail_coefs.txt
+    ├── cband_rain_coefs.txt
+    ├── cband_snow_coefs.txt
+    ├── cband_graupel_coefs.txt
+    └── cband_hail_coefs.txt
+```
+
+## Building
+
+### Prerequisites
+
+- CMake 3.20 or higher
+- Fortran compiler (GNU, Intel, or IntelLLVM)
+- Optional: OpenMP for parallel computation
+
+### Build Instructions
+
+```bash
+# Clone or copy the ppro-lib directory
+cd ppro-lib
+
+# Create build directory
+mkdir build
+cd build
+
+# Configure with CMake
+cmake ..
+
+# Build the library
+make
+
+# Install (optional)
+make install
+```
+
+### CMake Options
+
+- `OPENMP`: Enable OpenMP support (default: ON)
+- `BUILD_SHARED_LIBS`: Build shared libraries instead of static (default: OFF)
+- `CMAKE_INSTALL_PREFIX`: Installation prefix
+
+Example with custom options:
+```bash
+cmake -DOPENMP=OFF -DCMAKE_INSTALL_PREFIX=/path/to/install ..
+```
+
+## Integration with UFO
+
+To use ppro-lib with JEDI-UFO, you can integrate it in one of two ways:
+
+### Option 1: Using find_package (Recommended for production)
+
+After installing ppro-lib, configure UFO with:
+```cmake
+find_package(PPRO REQUIRED)
+target_link_libraries(ufo PUBLIC ppro)
+```
+
+### Option 2: Using add_subdirectory (Recommended for development)
+
+Place ppro-lib in your UFO source tree and use:
+```cmake
+add_subdirectory(ppro-lib)
+target_link_libraries(ufo PUBLIC ppro)
+```
+
+## Coefficient Files
+
+The library requires coefficient files for S-band and C-band radars. These files should be placed in the `fix/` directory. See `fix/README.txt` for details on the required files.
+
+**Note**: Coefficient files must be obtained separately and are not included in this repository.
+
+## Module Structure
+
+### dualpol_op_mod.f90
+
+Core physics module containing:
+- `init_coefs()`: Initialize lookup table coefficients
+- `dualpol_op_rain()`: Rain dual-pol variables
+- `dualpol_op_icephase()`: Ice-phase dual-pol variables
+- `dualpol_op_total()`: Aggregate total dual-pol variables
+- `melting_scheme_zhang24()`: Melting layer partitioning
+- `dm_z_2moment()`: Mean diameter and reflectivity for 2-moment schemes
+- `dm_z_wsm6()`: Mean diameter and reflectivity for WSM6
+
+### dualpol_op_tlad_mod.f90
+
+Tangent-linear and adjoint module for data assimilation applications.
+
+## API Example
+
+```fortran
+use dualpol_op_mod
+
+! Initialize coefficients
+call init_coefs()
+
+! Compute dual-pol variables for a grid point
+call ufo_PPRO_sim1obs(iband, density_air, temp_air, &
+                      qr, qs, qg, zh, zdr, kdp, phv, &
+                      nr=nr)  ! Optional: for double-moment schemes
+```
+
+## Version History
+
+- **v1.0.0** (2025): Initial modularized release
+  - Extracted from JEDI-UFO
+  - Support for Thompson, WSM6, and NSSL microphysics
+  - S-band and C-band radar support
+
+## Authors
+
+- **Zhiquan (Jake) Liu** (NCAR/MMM) - Original P-PRO implementation
+- **Hejun Xie** - Integration of P-PRO operator into JEDI-UFO framework
+- **Taosun Wei** - Adding hail categories and extended microphysics support
+- **Rong Kong** (NCAR/MMM) - Bug fixes, operator tuning and testing, modularization and external library development
+
+## Contributors
+
+- Additional contributors from JCSDA and JEDI community
+
+## License
+
+This software is licensed under the terms of the Apache Licence Version 2.0
+which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
+
+## References
+
+1. Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
+
+2. Zhang, G., et al., 2024: (Melting scheme reference)
+
+## Contact
+
+For questions, issues, or contributions:
+- **Technical**: Rong Kong (rkong@ucar.edu)
+- **JEDI Support**: jedi-support@ucar.edu
+- **Issues**: Please open an issue in the repository
+
+## Acknowledgments
+
+This work is part of the Joint Center for Satellite Data Assimilation (JCSDA) and the Joint Effort for Data assimilation Integration (JEDI) project.
+
+## Usage:
+
+# To construct ppro-lib independently
+- cd ppro-lib
+- mkdir build && cd build
+- cmake ..
+- make
+- make install
+
+

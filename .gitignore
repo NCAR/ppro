@@ -1,0 +1,27 @@
+# Build directories
+build/
+build*/
+*.build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+
+# Fortran compiled files
+*.mod
+*.o
+*.a
+*.so
+*.dylib
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
+
+# macOS
+.DS_Store
