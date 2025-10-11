@@ -144,14 +144,15 @@ call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, nr=nr)
 ```
 
-**Using TCWA2 operator (no coefficient files needed):**
+**Using TCWA2 operator (analytical formulation, no coefficient files needed):**
 ```fortran
 use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
 
-! Initialize with TCWA2 operator  
+! Initialize with TCWA2 operator (no coefficient files required)
 call ppro_init_coefs(operator_name='TCWA2')
 
 ! Compute dual-pol variables (TCWA2 requires additional parameters)
+! Note: TCWA2 needs cloud ice (qi, ni), cloud water (qc), and melting fractions (smlf, gmlf)
 call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, &
                         nr=nr, ns=ns, ng=ng, ni=ni, qi=qi, qc=qc, &
@@ -180,9 +181,11 @@ target_link_libraries(ufo PUBLIC ppro)
 
 ## Coefficient Files
 
-The library requires coefficient files for S-band and C-band radars. These files should be placed in the `fix/` directory. See `fix/README.txt` for details on the required files.
+**Zhang21 operator** requires coefficient files for S-band and C-band radars. These files should be placed in the `fix/` directory. See `fix/README.txt` for details on the required files.
 
-**Note**: Coefficient files must be obtained separately and are not included in this repository.
+**TCWA2 operator** does not require coefficient files as it uses analytical formulations.
+
+**Note**: Coefficient files for Zhang21 must be obtained separately and are not included in this repository.
 
 ## Module Structure
 
@@ -268,7 +271,7 @@ which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
 1. Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
 
-2. Zhang, G., et al., 2024: (Melting scheme reference)
+2. Liu, et al., 2024: (Melting scheme reference): A New Melting Model and Its Implementation in Parameterized Forward Operators for Polarimetric Radar Data Simulation With Double Moment Microphysics Schemes, JGR, 129.
 
 ## Contact
 
