@@ -87,7 +87,7 @@ undefined reference to `__dualpol_op_mod_MOD_init_coefs`
 ## Support
 
 - **Technical Lead**: Rong Kong (rkong@ucar.edu)
-- **General Support**: jedi-support@ucar.edu
 - **Issues**: Open a GitHub issue
 - **Documentation**: See `README.md` and `INTEGRATION_GUIDE.md`
+
 
