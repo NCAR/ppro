@@ -4,8 +4,8 @@
 !> This program demonstrates how to use the PPRO library independently
 !> to compute dual-polarization radar variables from model state variables.
 !>
-!> @author NCAR/MMM
-!> @date 2025
+!> @Rong Kong NCAR/MMM
+!> @10/10 2025
 
 program standalone_test
   use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point, ppro_finalize
@@ -217,4 +217,5 @@ program standalone_test
   call ppro_finalize()
   
 end program standalone_test
+
 
