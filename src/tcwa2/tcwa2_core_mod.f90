@@ -8,8 +8,8 @@
 !
 ! Reference: Tsai et al. TCWA2 microphysics scheme
 ! 
-! Author: Tzu-Chin Tsai (original implementation)
-! Integrated into PPRO library: 2025
+! Author: Tzu-Chin Tsai (CWB, original implementation)
+! Integrated into PPRO library: Rong Kong (NCAR/MMM), 2025
 !--------------------------------------
   implicit none
 
@@ -655,3 +655,4 @@ contains
 !======================================================================
 
 end module tcwa2_core_mod
+
