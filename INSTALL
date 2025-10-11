@@ -1,0 +1,5 @@
+mkdir build
+cd build
+cmake -DBUILD_EXAMPLES=ON -DCMAKE_INSTALL_PREFIX=$HOME/ppro_install ..
+make -j8
+make install

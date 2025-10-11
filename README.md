@@ -20,13 +20,21 @@ The operator computes dual-polarization radar variables including:
 
 ## Features
 
-- Support for multiple microphysics schemes:
+- **Multiple Polarimetric Operators:**
+  - **Zhang21**: Lookup table based (Zhang et al. 2021)
+  - **TCWA2**: Analytical gamma distribution formulation
+  
+- **Microphysics Schemes:**
   - Thompson (double-moment for rain)
   - WSM6 (single-moment)
   - NSSL (double-moment with hail)
-- S-band and C-band radar frequencies
-- Melting layer treatment following Zhang et al. (2024)
-- Pure and melting hydrometeor categories (rain, snow, graupel, hail)
+  
+- **Radar Frequencies:**
+  - S-band and C-band support
+  
+- **Advanced Physics:**
+  - Melting layer treatment (Zhang21)
+  - Pure and melting hydrometeor categories (rain, snow, graupel, hail)
 
 ## Directory Structure
 
@@ -44,8 +52,14 @@ ppro/
 │   └── compiler_flags_IntelLLVM_Fortran.cmake
 ├── src/                   # Source code
 │   ├── CMakeLists.txt
-│   ├── dualpol_op_mod.f90       # Core dual-pol operator module
-│   └── dualpol_op_tlad_mod.f90  # Tangent-linear and adjoint module
+│   ├── dualpol_op_mod.f90       # Main interface (operator dispatch)
+│   ├── zhang21/                 # Zhang21 operator
+│   │   ├── zhang21_core_mod.f90   # Zhang21 core physics
+│   │   ├── zhang21_tlad_mod.f90   # Zhang21 TL/AD
+│   │   └── CMakeLists.txt
+│   └── tcwa2/                   # TCWA2 operator
+│       ├── tcwa2_core_mod.f90     # TCWA2 core physics
+│       └── CMakeLists.txt
 ├── examples/              # Standalone example programs
 │   ├── CMakeLists.txt
 │   ├── standalone_test.f90      # Comprehensive test/demo program
@@ -118,16 +132,30 @@ See `examples/README.md` for more details on examples and how to write your own 
 
 The library can be used independently in any Fortran-based numerical weather prediction model:
 
+**Using Zhang21 operator (requires coefficient files):**
 ```fortran
 use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
 
-! Initialize coefficients (call once)
-call ppro_init_coefs()
+! Initialize with Zhang21 operator
+call ppro_init_coefs(operator_name='Zhang21')
 
-! Compute dual-pol variables for a grid point
+! Compute dual-pol variables
+call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
+                        qr, qs, qg, zh, zdr, kdp, phv, nr=nr)
+```
+
+**Using TCWA2 operator (no coefficient files needed):**
+```fortran
+use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
+
+! Initialize with TCWA2 operator  
+call ppro_init_coefs(operator_name='TCWA2')
+
+! Compute dual-pol variables (TCWA2 requires additional parameters)
 call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, &
-                        nr=nr)
+                        nr=nr, ns=ns, ng=ng, ni=ni, qi=qi, qc=qc, &
+                        smlf=smlf, gmlf=gmlf)
 ```
 
 ### Integration with JEDI-UFO
@@ -158,48 +186,78 @@ The library requires coefficient files for S-band and C-band radars. These files
 
 ## Module Structure
 
-### dualpol_op_mod.f90
+### Main Interface (`dualpol_op_mod.f90`)
 
-Core physics module containing:
-- `init_coefs()`: Initialize lookup table coefficients
-- `dualpol_op_rain()`: Rain dual-pol variables
-- `dualpol_op_icephase()`: Ice-phase dual-pol variables
-- `dualpol_op_total()`: Aggregate total dual-pol variables
-- `melting_scheme_zhang24()`: Melting layer partitioning
-- `dm_z_2moment()`: Mean diameter and reflectivity for 2-moment schemes
-- `dm_z_wsm6()`: Mean diameter and reflectivity for WSM6
+Unified interface providing:
+- `ppro_init_coefs()`: Initialize library with operator selection
+- `ppro_compute_point()`: Main computation (dispatches to selected operator)
+- `ppro_set_operator()`: Switch between operators
+- `ppro_finalize()`: Cleanup
 
-### dualpol_op_tlad_mod.f90
+### Zhang21 Operator (`zhang21/`)
 
-Tangent-linear and adjoint module for data assimilation applications.
+**zhang21_core_mod.f90** - Lookup table based operator:
+- `zhang21_init_coefs()`: Load coefficient lookup tables
+- `zhang21_compute_point()`: Compute using lookup tables
+- `melting_scheme_zhang24()`: Melting layer treatment
+- `dualpol_op_rain/icephase/total()`: Individual hydrometeor calculations
+
+**zhang21_tlad_mod.f90** - Tangent-linear and adjoint for DA applications
+
+### TCWA2 Operator (`tcwa2/`)
+
+**tcwa2_core_mod.f90** - Analytical gamma distribution based:
+- `dualpol_op_rain_tcwa2()`: Rain using analytical formulas
+- `dualpol_op_ice_tcwa2()`: Ice using analytical formulas
+- `dualpol_op_snow_tcwa2()`: Snow with melting
+- `dualpol_op_graup_tcwa2()`: Graupel with melting
+- `GAMLN()`: Gamma function computation
 
 ## API Example
 
+**Zhang21 operator:**
 ```fortran
 use dualpol_op_mod
 
-! Initialize coefficients
-call init_coefs()
+! Initialize Zhang21 operator
+call ppro_init_coefs(operator_name='Zhang21')
 
-! Compute dual-pol variables for a grid point
-call ufo_PPRO_sim1obs(iband, density_air, temp_air, &
-                      qr, qs, qg, zh, zdr, kdp, phv, &
-                      nr=nr)  ! Optional: for double-moment schemes
+! Compute dual-pol variables
+call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
+                        qr, qs, qg, zh, zdr, kdp, phv, nr=nr)
+```
+
+**TCWA2 operator:**
+```fortran
+use dualpol_op_mod
+
+! Initialize TCWA2 operator
+call ppro_init_coefs(operator_name='TCWA2')
+
+! Compute dual-pol variables
+call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
+                        qr, qs, qg, zh, zdr, kdp, phv, &
+                        nr=nr, ns=ns, ng=ng, ni=ni, qi=qi, qc=qc, &
+                        smlf=smlf, gmlf=gmlf)
 ```
 
 ## Version History
 
 - **v1.0.0** (2025): Initial modularized release
-  - Extracted from JEDI-UFO
+  - Extracted from JEDI-UFO as independent library
+  - Multi-operator architecture (Zhang21 + TCWA2)
+  - Modular directory structure (zhang21/ and tcwa2/ subdirectories)
   - Support for Thompson, WSM6, and NSSL microphysics
   - S-band and C-band radar support
+  - Standalone examples and comprehensive documentation
 
 ## Authors
 
-- **Zhiquan (Jake) Liu** (NCAR/MMM) - Original P-PRO implementation
-- **Hejun Xie** - Integration of P-PRO operator into JEDI-UFO framework
+- **Zhiquan (Jake) Liu** (NCAR/MMM) - Zhang21 operator implementation
+- **Tzu-Chin Tsai** - TCWA2 operator implementation
+- **Hejun Xie** - Integration into JEDI-UFO framework, TL/AD development
 - **Tao Sun** - Adding hail categories and extended microphysics support
-- **Rong Kong** (NCAR/MMM) - Bug fixes, operator tuning and testing, modularization and external library development
+- **Rong Kong** (NCAR/MMM) - Bug fixes, operator tuning and testing, modularization and multi-operator architecture
 
 ## License
 

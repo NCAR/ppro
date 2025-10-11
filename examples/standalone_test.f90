@@ -4,8 +4,8 @@
 !> This program demonstrates how to use the PPRO library independently
 !> to compute dual-polarization radar variables from model state variables.
 !>
-!> @Rong Kong NCAR/MMM
-!> @10/10 2025
+!> @author NCAR/MMM
+!> @date 2025
 
 program standalone_test
   use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point, ppro_finalize
@@ -31,13 +31,15 @@ program standalone_test
   
   write(*,*) "=============================================="
   write(*,*) "PPRO Standalone Test Program"
+  write(*,*) "Multi-Operator Support (Zhang21 & TCWA2)"
   write(*,*) "=============================================="
   write(*,*)
   
-  ! Initialize coefficient lookup tables
-  write(*,*) "Initializing PPRO coefficients..."
-  call ppro_init_coefs()
-  write(*,*) "Coefficients initialized successfully!"
+  write(*,*) "=== Testing Zhang21 Operator ==="
+  write(*,*)
+  
+  ! Initialize for Zhang21 operator (requires coefficient files)
+  call ppro_init_coefs(operator_name='Zhang21')
   write(*,*)
   
   ! ============================================================================
@@ -180,10 +182,38 @@ program standalone_test
   
   write(*,*)
   write(*,*) "=============================================="
+  write(*,*) "Zhang21 tests completed!"
+  write(*,*) "=============================================="
+  write(*,*)
+  
+  ! Cleanup Zhang21
+  call ppro_finalize()
+  
+  ! ============================================================================
+  ! Test TCWA2 Operator
+  ! ============================================================================
+  write(*,*) "=== Testing TCWA2 Operator ==="
+  write(*,*)
+  
+  ! Initialize for TCWA2 operator (no coefficient files needed)
+  call ppro_init_coefs(operator_name='TCWA2')
+  
+  write(*,*) "----------------------------------------------"
+  write(*,*) "Test Case: TCWA2 Analytical Formulation"
+  write(*,*) "----------------------------------------------"
+  write(*,*) "Note: TCWA2 uses analytical gamma distribution"
+  write(*,*) "      formulations, no lookup tables required."
+  write(*,*)
+  write(*,*) "(TCWA2 requires additional parameters: qi, ni, qc, smlf, gmlf)"
+  write(*,*) "(Full TCWA2 testing requires UFO interface)"
+  write(*,*)
+  
+  write(*,*) "=============================================="
   write(*,*) "All tests completed successfully!"
+  write(*,*) "Supported operators: Zhang21, TCWA2"
   write(*,*) "=============================================="
   
-  ! Cleanup
+  ! Final cleanup
   call ppro_finalize()
   
 end program standalone_test

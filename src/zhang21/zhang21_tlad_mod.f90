@@ -1,4 +1,4 @@
-module dualpol_op_tlad_mod
+module zhang21_tlad_mod
 !--------------------------
 ! The tangent linear (TL) / adjoint (AD) module of the 
 ! Parameterized polarimetric radar operator following
@@ -10,7 +10,13 @@ module dualpol_op_tlad_mod
 ! Initial version: May 2024
 !--------------------------------------
 
-  use dualpol_op_mod
+  use zhang21_core_mod, only: density_rain, density_snow, density_graupel, density_hail, &
+                              ratio_rain, ratio_snow, ratio_graupel, ratio_hail, &
+                              sband_snow_a, sband_graupel_a, sband_hail_a, &
+                              cband_snow_a, cband_graupel_a, cband_hail_a, &
+                              sband_rain_coefs, sband_snow_coefs, sband_graupel_coefs, sband_hail_coefs, &
+                              cband_rain_coefs, cband_snow_coefs, cband_graupel_coefs, cband_hail_coefs, &
+                              n0_lambda_wsm6, n0_lambda_gceop
 
   implicit none
 
@@ -1275,4 +1281,4 @@ contains
 
   end subroutine melting_scheme_zhang24_ad
 
-end module dualpol_op_tlad_mod
+end module zhang21_tlad_mod

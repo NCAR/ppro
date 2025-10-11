@@ -4,7 +4,7 @@ project(ppro VERSION 1.0.0 LANGUAGES Fortran)
 
 option(OPENMP "Build ppro with OpenMP support" ON)
 option(FIX_FILE_PATH "Path to coefficient files (default: fix/)" OFF)
-option(BUILD_EXAMPLES "Build standalone example programs" ON)
+option(BUILD_EXAMPLES "Build standalone example programs" OFF)  #Change to ON for standalone K.R.
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(CMAKE_DIRECTORY_LABELS ${PROJECT_NAME})

@@ -17,23 +17,27 @@ endif()
 # Set module output directory for build and install interfaces
 set(MODULE_DIR module/${PROJECT_NAME}/${CMAKE_Fortran_COMPILER_ID}/${CMAKE_Fortran_COMPILER_VERSION})
 
-# Build the library in two steps to ensure proper module dependency
-# Step 1: Compile dualpol_op_mod.f90 first (base module)
-add_library(${PROJECT_NAME}_base OBJECT dualpol_op_mod.f90)
-set_target_properties(${PROJECT_NAME}_base PROPERTIES
-    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/${MODULE_DIR})
+# Build the library in multiple steps to ensure proper module dependency
 
-# Step 2: Compile dualpol_op_tlad_mod.f90 (depends on base)
-add_library(${PROJECT_NAME}_tlad OBJECT dualpol_op_tlad_mod.f90)
-set_target_properties(${PROJECT_NAME}_tlad PROPERTIES
-    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/${MODULE_DIR})
-target_include_directories(${PROJECT_NAME}_tlad PRIVATE ${CMAKE_BINARY_DIR}/${MODULE_DIR})
-add_dependencies(${PROJECT_NAME}_tlad ${PROJECT_NAME}_base)
+# Step 1: Build TCWA2 module (independent, no dependencies)
+add_subdirectory(tcwa2)
 
-# Step 3: Combine into final library
+# Step 2: Build Zhang21 modules (independent)
+add_subdirectory(zhang21)
+
+# Step 3: Build main interface module (depends on Zhang21 and TCWA2)
+add_library(${PROJECT_NAME}_interface OBJECT dualpol_op_mod.f90)
+set_target_properties(${PROJECT_NAME}_interface PROPERTIES
+    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/${MODULE_DIR})
+target_include_directories(${PROJECT_NAME}_interface PRIVATE ${CMAKE_BINARY_DIR}/${MODULE_DIR})
+add_dependencies(${PROJECT_NAME}_interface ${PROJECT_NAME}_tcwa2 ${PROJECT_NAME}_zhang21_core)
+
+# Step 4: Combine into final library
 add_library(${PROJECT_NAME} ${LIBRARY_TYPE} 
-    $<TARGET_OBJECTS:${PROJECT_NAME}_base>
-    $<TARGET_OBJECTS:${PROJECT_NAME}_tlad>
+    $<TARGET_OBJECTS:${PROJECT_NAME}_tcwa2>
+    $<TARGET_OBJECTS:${PROJECT_NAME}_zhang21_core>
+    $<TARGET_OBJECTS:${PROJECT_NAME}_zhang21_tlad>
+    $<TARGET_OBJECTS:${PROJECT_NAME}_interface>
 )
 
 # Link dependencies (if needed, currently none)
