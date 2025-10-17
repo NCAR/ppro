@@ -9,8 +9,11 @@ module zhang21_core_mod
 !
 ! Authors:
 !   Zhiquan (Jake) Liu (NCAR/MMM) - Initial implementation, July 2022
-!   Rong Kong (NCAR/MMM) - Modularization and optimization, 2025
+！  Hejun Xie (NCAR/MMM) - Integration into JEDI-UFO framework, TL/AD development (not testing yet), August 2024
+!   Tao Sun (NCAR/MMM) - Adding hail categories and extended microphysics support, April 2025
+!   Rong Kong (NCAR/MMM) - Bug fixes, operator tuning and testing; Modularization and optimization, October 2025
 !--------------------------------------
+
   implicit none
 
   ! Physical constants
