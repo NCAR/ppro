@@ -12,6 +12,10 @@ The P-PRO operator is based on the parameterized forward operators for polarimet
 
 > Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
 
+**Zhang21 Method**: Polynomial functions of mean diameter (Dm) and water fraction (fx), with coefficients fitted from extensive T-matrix scattering simulations. At runtime, only polynomial evaluation is performed—**no table lookup**.
+
+**TCWA2 Method**: Analytical formulation based on gamma distribution PSD parameters (λ, α), with direct integration—**no coefficients needed**.
+
 The operator computes dual-polarization radar variables including:
 - **Zhh**: Horizontal reflectivity (dBZ)
 - **ZDR**: Differential reflectivity (dB)
@@ -21,20 +25,22 @@ The operator computes dual-polarization radar variables including:
 ## Features
 
 - **Multiple Polarimetric Operators:**
-  - **Zhang21**: Lookup table based (Zhang et al. 2021)
-  - **TCWA2**: Analytical gamma distribution formulation
+  - **Zhang21**: Polynomial functions fitted from T-matrix simulations (Zhang et al. 2021)
+  - **TCWA2**: Analytical gamma distribution formulation (Tsai et al. 2022)
   
 - **Microphysics Schemes:**
-  - Thompson (double-moment for rain)
-  - WSM6 (single-moment)
-  - NSSL (double-moment with hail)
+  - **Thompson**: Double-moment for rain (with Zhang21 operator)
+  - **WSM6**: Single-moment (with Zhang21 operator)
+  - **NSSL**: Double-moment with hail (with Zhang21 operator)
+  - **TCWA2**: Taiwan CWA analytical scheme (with TCWA2 operator)
   
 - **Radar Frequencies:**
-  - S-band and C-band support
+  - S-band (11 cm wavelength) and C-band (5.3 cm wavelength) support
   
 - **Advanced Physics:**
-  - Melting layer treatment (Zhang21)
-  - Pure and melting hydrometeor categories (rain, snow, graupel, hail)
+  - Melting layer treatment (Zhang21: QC-based; TCWA2: melted fraction based)
+  - Pure and melting hydrometeor categories (rain, snow, graupel, hail, ice)
+  - Analytical PSD (Particle Size Distribution) modeling (TCWA2)
 
 ## Directory Structure
 
@@ -132,19 +138,19 @@ See `examples/README.md` for more details on examples and how to write your own 
 
 The library can be used independently in any Fortran-based numerical weather prediction model:
 
-**Using Zhang21 operator (requires coefficient files):**
+**Using Zhang21 operator (polynomial-based from T-matrix):**
 ```fortran
 use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
 
-! Initialize with Zhang21 operator
+! Initialize with Zhang21 operator (reads polynomial coefficient files)
 call ppro_init_coefs(operator_name='Zhang21')
 
-! Compute dual-pol variables
+! Compute dual-pol variables using polynomial functions of Dm and fx
 call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, nr=nr)
 ```
 
-**Using TCWA2 operator (analytical formulation, no coefficient files needed):**
+**Using TCWA2 operator (analytical gamma distribution, no coefficient files needed):**
 ```fortran
 use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
 
@@ -199,9 +205,9 @@ Unified interface providing:
 
 ### Zhang21 Operator (`zhang21/`)
 
-**zhang21_core_mod.f90** - Lookup table based operator:
-- `zhang21_init_coefs()`: Load coefficient lookup tables
-- `zhang21_compute_point()`: Compute using lookup tables
+**zhang21_core_mod.f90** - Polynomial-based operator:
+- `zhang21_init_coefs()`: Load polynomial coefficients (S-band/C-band)
+- `zhang21_compute_point()`: Compute using polynomial functions of Dm and fx
 - `melting_scheme_zhang24()`: Melting layer treatment
 - `dualpol_op_rain/icephase/total()`: Individual hydrometeor calculations
 
@@ -216,33 +222,75 @@ Unified interface providing:
 - `dualpol_op_graup_tcwa2()`: Graupel with melting
 - `GAMLN()`: Gamma function computation
 
-## API Example
+## Detailed Operator Usage
 
-**Zhang21 operator:**
+### Zhang21 Operator with Multiple Microphysics Schemes
+
+**Method**: Polynomial functions of Dm (mean diameter) and fx (water fraction) fitted from T-matrix simulations
+
+**Compatible Schemes**: WSM6, Thompson, NSSL
+
+**WSM6 (Single-moment, 7 variables):**
 ```fortran
 use dualpol_op_mod
 
-! Initialize Zhang21 operator
 call ppro_init_coefs(operator_name='Zhang21')
+call ppro_compute_point(iband, 'WSM6', density_air, temp_air, &
+                        qr, qs, qg, zh, zdr, kdp, phv)
+```
 
-! Compute dual-pol variables
+**Thompson (Double-moment for rain, 8 variables):**
+```fortran
+use dualpol_op_mod
+
+call ppro_init_coefs(operator_name='Zhang21')
 call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, nr=nr)
 ```
 
-**TCWA2 operator:**
+**NSSL (Double-moment with hail, 14 variables):**
 ```fortran
 use dualpol_op_mod
 
-! Initialize TCWA2 operator
+call ppro_init_coefs(operator_name='Zhang21')
+call ppro_compute_point(iband, 'NSSL', density_air, temp_air, &
+                        qr, qs, qg, zh, zdr, kdp, phv, &
+                        qh=qh, nr=nr, ns=ns, ng=ng, nh=nh, vg=vg, vh=vh)
+```
+
+### TCWA2 Operator
+
+**Method**: Analytical gamma distribution formulation
+
+**Compatible Scheme**: TCWA2 only
+
+**TCWA2 (15 variables with melting fractions):**
+```fortran
+use dualpol_op_mod
+
+! Initialize TCWA2 operator (no coefficient files needed)
 call ppro_init_coefs(operator_name='TCWA2')
 
-! Compute dual-pol variables
+! Compute dual-pol variables with TCWA2-specific inputs
+! Note: Requires qi, ni (ice), qc (cloud water), smlf, gmlf (melting fractions)
 call ppro_compute_point(iband, 'TCWA2', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, &
                         nr=nr, ns=ns, ng=ng, ni=ni, qi=qi, qc=qc, &
                         smlf=smlf, gmlf=gmlf)
 ```
+
+**Key Differences**:
+- **Zhang21**: 
+  - Initialization: Read polynomial coefficients from files (one-time)
+  - Runtime: Polynomial evaluation only—**no table lookup**
+  - Melting: Temperature-based QC applied internally
+  - Schemes: WSM6, Thompson, NSSL
+  
+- **TCWA2**: 
+  - Initialization: No coefficient files needed
+  - Runtime: Analytical gamma distribution integration
+  - Melting: Explicit melted fraction fields (smlf, gmlf) from model
+  - Schemes: TCWA2 only
 
 ## Version History
 
@@ -267,11 +315,42 @@ call ppro_compute_point(iband, 'TCWA2', density_air, temp_air, &
 This software is licensed under the terms of the Apache Licence Version 2.0
 which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
+## Operator Comparison: Zhang21 vs TCWA2
+
+| Feature | Zhang21 | TCWA2 |
+|---------|---------|-------|
+| **Method** | Polynomial functions fitted from T-matrix simulations | Analytical gamma distribution formulation |
+| **Basis** | Polynomials of Dm and fx (water fraction) | Direct gamma PSD parameters (λ, α) |
+| **Coefficient files** | Required (fix/*.txt) | Not required |
+| **Microphysics** | Thompson, WSM6, NSSL | TCWA2 (Taiwan CWA) |
+| **Melting treatment** | Temperature-based QC | Melted fraction fields |
+| **Required inputs** | qr, qs, qg [+ qh, nr, ns, ng, nh, vg, vh for NSSL] | qr, qs, qg, qc, qi, nr, ns, ng, ni, smlf, gmlf |
+| **Ice crystal** | Not used | Explicit (qi, ni) |
+| **Cloud water** | Not used | Explicit (qc) |
+| **Validation** | Extensive | CWA operational |
+
+**Key Algorithmic Differences**:
+- **Zhang21**: Dm and fx → Polynomial evaluation → Zh, ZDR, KDP, ρhv
+- **TCWA2**: Gamma PSD (λ, α) → Analytical integration → Zh, ZDR, KDP
+
+**Recommendation**: 
+- Use **Zhang21** for standard WRF microphysics schemes (Thompson, WSM6, NSSL)
+- Use **TCWA2** for Taiwan CWA microphysics with explicit melting information
+
 ## References
 
-1. Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
+1. **Zhang21 Operator**:  
+   Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
 
-2. Liu, et al., 2024: (Melting scheme reference): A New Melting Model and Its Implementation in Parameterized Forward Operators for Polarimetric Radar Data Simulation With Double Moment Microphysics Schemes, JGR, 129.
+2. **Zhang21 Melting Scheme**:  
+   Liu, et al., 2024: A New Melting Model and Its Implementation in Parameterized Forward Operators for Polarimetric Radar Data Simulation With Double Moment Microphysics Schemes. *JGR Atmospheres*, **129**.
+
+3. **TCWA2 Operator**:  
+   - Chen, J.-P., and D. Lamb, 1994: The theoretical basis for the parameterization of ice crystal habits: Growth by vapor deposition. *J. Atmos. Sci.*, **51**, 1206–1221.
+   - Cheng, C.-T., W.-C. Wang, and J.-P. Chen, 2010: Simulation of the effects of increasing cloud condensation nuclei on mixed-phase clouds and precipitation of a front system. *Atmos. Res.*, **96**, 461-476.
+   - Chen, J.-P., I-C. Tsai and Y.-C. Lin, 2013: A statistical-numerical aerosol parameterization scheme. *Atmos. Chem. Phys.*, **13**, 10483–10504.
+   - Chen, J.-P., and T.-C. Tsai, 2016: Triple-moment modal parameterization for the adaptive growth habit of pristine ice crystals. *J. Atmos. Sci.*, **73**, 2105–2122.
+   - Reisner, J., R. M. Rasmussen, and R. T. Bruintjes, 1998: Explicit forecasting of supercooled liquid water in winter storms using the MM5 forecast model. *Quart. J. Roy. Meteor. Soc.*, **124**, 1071–1107.
 
 ## Contact
 
