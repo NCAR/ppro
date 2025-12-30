@@ -425,14 +425,14 @@ contains
       include_hail = .true.
     endif
 
-    ! Here the zdr is dimensionless, not in unit of dBZ, therefore always positive
+    ! Here the zdr is dimensionless, not in unit of dB, therefore always positive
     if(zdr_prain > 1.0D-3)then
        zv_prain = zh_prain/zdr_prain
     else
        zv_prain = 0.0d0
     endif
 
-    if(zdr_prain > 1.0-3)then
+    if(zdr_prain > 1.0D-3)then
        zbar_prain = zh_prain / sqrt(zdr_prain)
     else
        zbar_prain = 0.0d0
@@ -493,7 +493,7 @@ contains
     if (include_hail) then
        if(zdr_mhail > 1.0D-3)then
           zv_mhail = zh_mhail/zdr_mhail
-          zbar_mhail = zh_msnow / sqrt(zdr_mhail)
+          zbar_mhail = zh_mhail / sqrt(zdr_mhail)
        else
           zv_mhail = 0.0d0
           zbar_mhail = 0.0d0
