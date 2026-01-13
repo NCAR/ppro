@@ -38,6 +38,18 @@ module dualpol_op_mod
   public :: cband_snow_a, cband_graupel_a, cband_hail_a
   public :: sband_rain_coefs, sband_snow_coefs, sband_graupel_coefs, sband_hail_coefs
   public :: cband_rain_coefs, cband_snow_coefs, cband_graupel_coefs, cband_hail_coefs
+  
+  ! Re-export melting scheme parameters (configurable via YAML in UFO layer)
+  public :: melting_scheme_option
+  public :: enable_melting_transition
+  public :: snow_ratio_low, snow_ratio_high
+  public :: graupel_ratio_low, graupel_ratio_high
+  public :: hail_ratio_low, hail_ratio_high
+  public :: enable_melting_water_limit, melting_water_fraction
+  public :: dmmax_rain
+  public :: dmmax_pure_snow, dmmax_melting_snow
+  public :: dmmax_pure_graupel, dmmax_melting_graupel
+  public :: dmmax_pure_hail, dmmax_melting_hail
 
 contains
 
@@ -81,7 +93,8 @@ contains
   ! ------------------------------------------------------------------------------
   subroutine ppro_compute_point(iband, scheme_type, density_air, temp_air, &
                                 qr, qs, qg, zh, zdr, kdp, phv, &
-                                qh, nr, ns, ng, nh, vg, vh, qi, ni, qc, smlf, gmlf)
+                                qh, nr, ns, ng, nh, vg, vh, qi, ni, qc, smlf, gmlf, &
+                                height, zhobs, zdrobs, kdpobs, coeff_melt, temperature, iobs)
     implicit none
     
     ! Inputs
@@ -96,13 +109,19 @@ contains
     ! Optional inputs
     real(kind=8), intent(in), optional :: qh, nr, ns, ng, nh, vg, vh
     real(kind=8), intent(in), optional :: qi, ni, qc, smlf, gmlf
+    real(kind=8), intent(in), optional :: height, zhobs, zdrobs, kdpobs
+    real(kind=8), intent(in), optional :: coeff_melt, temperature
+    integer, intent(in), optional :: iobs
     
     ! Dispatch to selected operator
     if (current_operator == OPERATOR_ZHANG21) then
       ! Zhang21: Use lookup tables with melting layer treatment
+      ! Note: vg, vh not passed to disable dynamic density calculation (use fixed density)
       call zhang21_compute_point(iband, scheme_type, density_air, temp_air, &
                                  qr, qs, qg, zh, zdr, kdp, phv, &
-                                 qh, nr, ns, ng, nh, vg, vh)
+                                 qh, nr, ns, ng, nh, &
+                                 height=height, zhobs=zhobs, zdrobs=zdrobs, kdpobs=kdpobs, &
+                                 coeff_melt=coeff_melt, temperature=temperature, iobs=iobs)
       
     else if (current_operator == OPERATOR_TCWA2) then
       ! TCWA2: Use analytical formulation
