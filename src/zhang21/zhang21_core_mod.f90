@@ -45,6 +45,12 @@ module zhang21_core_mod
   character(len=512), save :: coef_path_saved = ''
 
   ! ============================================================================
+  ! Skip small qx (configurable via YAML)
+  ! ============================================================================
+  logical, save :: skip_small_qx = .true.  ! Default: enabled
+  public :: skip_small_qx
+
+  ! ============================================================================
   ! Melting skip threshold (HARD-CODED)
   ! ============================================================================
   ! Skip melting calculation if qr + qx < qsum_min_threshold
@@ -61,15 +67,15 @@ module zhang21_core_mod
   !   - balance > ratio_high -> factor = 1 (full melting)
   !   - in between           -> linear transition
   ! ============================================================================
-  logical, save :: enable_melting_transition = .false.   ! Default disabled, can be overridden via YAML
+  logical, save :: enable_melting_transition = .true.   ! Default enabled, can be overridden via YAML
   
   ! Transition parameters (configurable via YAML)
-  real(kind=8), save :: snow_ratio_low    = 0.05d0   ! factor=0 below this
-  real(kind=8), save :: snow_ratio_high   = 0.2d0    ! factor=1 above this
-  real(kind=8), save :: graupel_ratio_low  = 0.05d0
-  real(kind=8), save :: graupel_ratio_high = 0.2d0
-  real(kind=8), save :: hail_ratio_low    = 0.05d0
-  real(kind=8), save :: hail_ratio_high   = 0.2d0
+  real(kind=8), save :: snow_ratio_low    = 0.005d0   ! factor=0 below this
+  real(kind=8), save :: snow_ratio_high   = 0.05d0    ! factor=1 above this
+  real(kind=8), save :: graupel_ratio_low  = 0.005d0
+  real(kind=8), save :: graupel_ratio_high = 0.05d0
+  real(kind=8), save :: hail_ratio_low    = 0.005d0
+  real(kind=8), save :: hail_ratio_high   = 0.05d0
   
   public :: enable_melting_transition
   public :: snow_ratio_low, snow_ratio_high
@@ -77,26 +83,66 @@ module zhang21_core_mod
   public :: hail_ratio_low, hail_ratio_high
 
   ! ============================================================================
-  ! Melting water content limit (configurable via YAML)
+  ! Melting water content fraction (configurable via YAML)
   ! ============================================================================
-  ! When enabled, limits the rain component of melting species to a fraction of qr
-  ! This prevents excessive melting water content in certain scenarios
-  ! When disabled (default): no limit, equivalent to public version behavior
-  ! ============================================================================
-  logical, save :: enable_melting_water_limit = .false.   ! Default disabled (= public behavior)
-  real(kind=8), save :: melting_water_fraction = 0.3d0    ! Fraction limit (default 30%)
-  
-  public :: enable_melting_water_limit
+  real(kind=8), save :: melting_water_fraction = 1.0d0
   public :: melting_water_fraction
+  
+  ! ============================================================================
+  ! Dm-based melting limit (configurable via YAML)
+  ! ============================================================================
+  logical, save :: enable_dm_melting_limit = .true.   ! Default enabled
+  real(kind=8), save :: dm_melting_transition_width = 0.5d0  ! mm, controls smoothness of transition
+  public :: enable_dm_melting_limit
+  public :: dm_melting_transition_width
+  
+  ! ============================================================================
+  ! Dm regularization for small ntx/qx (configurable via YAML)
+  ! ============================================================================
+  logical, save :: enable_dm_regularization = .true.    ! Default enabled
+  public :: enable_dm_regularization
+  
+  ! ============================================================================
+  ! Dm tuning coefficients for each hydrometeor type (configurable via YAML)
+  ! ============================================================================
+  real(kind=8), save :: tuning_dm_rain           = 1.0d0
+  real(kind=8), save :: tuning_dm_melting_snow    = 1.0d0
+  real(kind=8), save :: tuning_dm_melting_graupel = 1.0d0
+  real(kind=8), save :: tuning_dm_melting_hail    = 1.0d0
+  real(kind=8), save :: tuning_dm_pure_snow       = 1.0d0
+  real(kind=8), save :: tuning_dm_pure_graupel    = 1.0d0
+  real(kind=8), save :: tuning_dm_pure_hail       = 1.0d0
+  public :: tuning_dm_rain
+  public :: tuning_dm_melting_snow, tuning_dm_melting_graupel, tuning_dm_melting_hail
+  public :: tuning_dm_pure_snow, tuning_dm_pure_graupel, tuning_dm_pure_hail
+  
+  ! ============================================================================
+  ! Melting rain exponent (configurable via YAML)
+  ! ============================================================================
+  real(kind=8), save :: melting_rain_exponent = 0.5d0
+  public :: melting_rain_exponent
+  
+  ! ============================================================================
+  ! Melting fraction tuning coefficients (configurable via YAML)
+  ! ============================================================================
+  real(kind=8), save :: tuning_melt_frac_snow    = 1.0d0
+  real(kind=8), save :: tuning_melt_frac_graupel = 1.0d0
+  real(kind=8), save :: tuning_melt_frac_hail    = 1.0d0
+  public :: tuning_melt_frac_snow, tuning_melt_frac_graupel, tuning_melt_frac_hail
 
   ! ============================================================================
   ! Melting scheme selection (configurable via YAML)
   ! ============================================================================
   ! 'liu24': sqrt formula for all species (qms = sqrt(qr*qs), etc.)
-  ! 'zhang24': original zhang24 scheme (backward compatibility)
   ! Default: 'liu24'
   character(len=16), save :: melting_scheme_option = 'liu24'
   public :: melting_scheme_option
+  
+  ! ============================================================================
+  ! Treat hail as graupel option (configurable via YAML)
+  ! ============================================================================
+  logical, save :: treat_hail_as_graupel = .false.   ! Default disabled
+  public :: treat_hail_as_graupel
 
   ! ============================================================================
   ! dmmax configuration (configurable via YAML)
@@ -502,70 +548,92 @@ contains
       include_hail = .true.
     endif
 
-    ! Here the zdr is dimensionless, not in unit of dB, therefore always positive
-    if(zdr_prain > 1.0D-3)then
-       zv_prain = zh_prain/zdr_prain
-    else
-       zv_prain = 0.0d0
-    endif
-
-    if(zdr_prain > 1.0D-3)then
+    ! Here the zdr is dimensionless (linear domain, before log10 conversion)
+    ! For rain, zdr >= 1.0 is physically expected (oblate drops)
+    ! When zdr < 1.0 (polynomial extrapolation artifact at small Dm),
+    ! assume isotropic scattering (zdr = 1.0) as a safe fallback
+    if(zdr_prain >= 1.0d0)then
+       zv_prain = zh_prain / zdr_prain
        zbar_prain = zh_prain / sqrt(zdr_prain)
     else
-       zbar_prain = 0.0d0
+       ! Isotropic assumption: zv = zh (equivalent to zdr = 1.0, i.e., 0 dB)
+       zv_prain = zh_prain
+       zbar_prain = zh_prain
     endif
 
-    if(zdr_msnow > 1.0D-3)then
-       zv_msnow = zh_msnow/zdr_msnow
+    if (present(zh_msnow) .and. present(zdr_msnow)) then
+      if(zdr_msnow >= 1.0d0)then
+         zv_msnow = zh_msnow / zdr_msnow
+         zbar_msnow = zh_msnow / sqrt(zdr_msnow)
+      else
+         ! Isotropic assumption: zdr < 1.0 is non-physical for melting snow
+         zv_msnow = zh_msnow
+         zbar_msnow = zh_msnow
+      endif
     else
-       zv_msnow = 0.0d0
+      zv_msnow = 0.0d0
+      zbar_msnow = 0.0d0
     endif
 
-    if(zdr_msnow > 1.0D-3)then
-       zbar_msnow = zh_msnow / sqrt(zdr_msnow)
-    else
-       zbar_msnow = 0.0d0
-    endif
-
-    if(zdr_mgraupel>1.0D-3)then
-      zv_mgraupel = zh_mgraupel/zdr_mgraupel
-      zbar_mgraupel = zh_mgraupel / sqrt(zdr_mgraupel)
+    if (present(zh_mgraupel) .and. present(zdr_mgraupel)) then
+      if(zdr_mgraupel >= 1.0d0)then
+        zv_mgraupel = zh_mgraupel / zdr_mgraupel
+        zbar_mgraupel = zh_mgraupel / sqrt(zdr_mgraupel)
+      else
+        ! Isotropic assumption: zdr < 1.0 is non-physical for melting graupel
+        zv_mgraupel = zh_mgraupel
+        zbar_mgraupel = zh_mgraupel
+      endif
     else
       zv_mgraupel = 0.0d0
       zbar_mgraupel = 0.0d0
     endif
 
-    if(zdr_psnow > 1.0D-3)then
-       zv_psnow = zh_psnow/zdr_psnow
+    if(zdr_psnow >= 1.0d0)then
+       zv_psnow = zh_psnow / zdr_psnow
        zbar_psnow = zh_psnow / sqrt(zdr_psnow)
     else
-       zv_psnow = 0.0d0
-       zbar_psnow = 0.0d0
+       ! Isotropic assumption: zdr < 1.0 is non-physical for pure snow
+       zv_psnow = zh_psnow
+       zbar_psnow = zh_psnow
     endif
 
-    if(zdr_pgraupel > 1.0D-3)then
-       zv_pgraupel = zh_pgraupel/zdr_pgraupel
+    if(zdr_pgraupel >= 1.0d0)then
+       zv_pgraupel = zh_pgraupel / zdr_pgraupel
        zbar_pgraupel = zh_pgraupel / sqrt(zdr_pgraupel)
     else
-       zv_pgraupel = 0.0d0
-       zbar_pgraupel = 0.0d0
+       ! Isotropic assumption: zdr < 1.0 is non-physical for pure graupel
+       zv_pgraupel = zh_pgraupel
+       zbar_pgraupel = zh_pgraupel
     endif
 
     if (include_hail) then
-       if(zdr_mhail > 1.0D-3)then
-          zv_mhail = zh_mhail/zdr_mhail
-          zbar_mhail = zh_mhail / sqrt(zdr_mhail)
+       if (present(zh_mhail) .and. present(zdr_mhail)) then
+         if(zdr_mhail >= 1.0d0)then
+            zv_mhail = zh_mhail / zdr_mhail
+            zbar_mhail = zh_mhail / sqrt(zdr_mhail)
+         else
+            ! Isotropic assumption: zdr < 1.0 is non-physical for melting hail
+            zv_mhail = zh_mhail
+            zbar_mhail = zh_mhail
+         endif
        else
-          zv_mhail = 0.0d0
-          zbar_mhail = 0.0d0
+         zv_mhail = 0.0d0
+         zbar_mhail = 0.0d0
        endif
 
-       if(zdr_phail > 1.0D-3)then
-          zv_phail = zh_phail/zdr_phail
-          zbar_phail = zh_phail / sqrt(zdr_phail)
+       if (present(zh_phail) .and. present(zdr_phail)) then
+         if(zdr_phail >= 1.0d0)then
+            zv_phail = zh_phail / zdr_phail
+            zbar_phail = zh_phail / sqrt(zdr_phail)
+         else
+            ! Isotropic assumption: zdr < 1.0 is non-physical for pure hail
+            zv_phail = zh_phail
+            zbar_phail = zh_phail
+         endif
        else
-          zv_phail = 0.0d0
-          zbar_phail = 0.0d0
+         zv_phail = 0.0d0
+         zbar_phail = 0.0d0
        endif
     endif
 
@@ -576,7 +644,7 @@ contains
           if(zv > 1.0D-3)then
              zdr = zh/zv ! Eq. 23
           else
-             zdr = 0.0d0
+             zdr = 1.0d0  ! No signal: ZDR = 1 (0 dB)
           endif
           kdp = kdp_prain + kdp_psnow + kdp_pgraupel + kdp_phail ! Eq. 24
           if(zbar_prain + zbar_psnow + zbar_pgraupel + zbar_phail > 1.0D-3)then
@@ -584,15 +652,15 @@ contains
                     zbar_psnow*phv_psnow + zbar_pgraupel*phv_pgraupel + zbar_phail*phv_phail) / &
                     (zbar_prain + zbar_psnow + zbar_pgraupel + zbar_phail) ! Eq. 25
           else
-             phv = 0.0d0
+             phv = 1.0d0  ! No signal: PhV = 1 (perfect correlation)
           endif
        else
           zh  = zh_prain + zh_msnow + zh_mgraupel + zh_psnow + zh_pgraupel + zh_mhail + zh_phail ! Eq. 22
-          zv = zv_prain + zv_msnow + zv_mgraupel + zv_psnow + zv_pgraupel + zv_mhail + zv_phail
+          zv  = zv_prain + zv_msnow + zv_mgraupel + zv_psnow + zv_pgraupel + zv_mhail + zv_phail
           if(zv > 1.0D-3)then
              zdr = zh/zv ! Eq. 23
           else
-             zdr = 0.0d0
+             zdr = 1.0d0  ! No signal: ZDR = 1 (0 dB)
           endif
           kdp = kdp_prain + kdp_msnow + kdp_mgraupel + kdp_psnow + kdp_pgraupel + kdp_mhail + kdp_phail ! Eq. 24
           if(zbar_prain + zbar_msnow + zbar_mgraupel + zbar_psnow + zbar_pgraupel + zbar_mhail + zbar_phail > 1.0D-3)then
@@ -600,15 +668,18 @@ contains
                     zbar_psnow*phv_psnow + zbar_pgraupel*phv_pgraupel + zbar_phail*phv_phail) / &
                     (zbar_prain + zbar_msnow + zbar_mgraupel + zbar_psnow + zbar_pgraupel + zbar_mhail + zbar_phail) ! Eq. 25
           else
-             phv = 0.0d0
+             phv = 1.0d0  ! No signal: PhV = 1 (perfect correlation)
           endif    
        endif
     else
+       ! No hail case
        zh  = zh_prain + zh_msnow + zh_mgraupel + zh_psnow + zh_pgraupel ! Eq. 22
-       if(zv_prain + zv_msnow + zv_mgraupel + zv_psnow + zv_pgraupel > 1.0D-3)then
-          zdr = zh/(zv_prain + zv_msnow + zv_mgraupel + zv_psnow + zv_pgraupel) ! Eq. 23
+       zv  = zv_prain + zv_msnow + zv_mgraupel + zv_psnow + zv_pgraupel
+
+       if(zv > 1.0D-3)then
+          zdr = zh/zv ! Eq. 23
        else
-          zdr = 0.0d0
+          zdr = 1.0d0  ! No signal: ZDR = 1 (0 dB)
        endif
       
        kdp = kdp_prain + kdp_msnow + kdp_mgraupel + kdp_psnow + kdp_pgraupel ! Eq. 24
@@ -618,9 +689,12 @@ contains
                  zbar_psnow*phv_psnow + zbar_pgraupel*phv_pgraupel) / &
                  (zbar_prain + zbar_msnow + zbar_mgraupel + zbar_psnow + zbar_pgraupel) ! Eq. 25
        else
-          phv = 0.0d0
+          phv = 1.0d0  ! No signal: PhV = 1 (perfect correlation)
        endif
     endif
+
+    ! KDP non-negative protection: negative KDP is non-physical in normal precipitation
+    kdp = max(kdp, 0.0d0)
 
   end subroutine dualpol_op_total
 
@@ -650,13 +724,114 @@ contains
     real(kind=8), intent(in)   :: qr    ! mixing ratio of rain, kg/kg
     real(kind=8), intent(in)   :: qx    ! mixing ratio of hydrometeor, kg/kg
     real(kind=8), intent(out)  :: ratio ! qr/(qr+qx)
-    if(qr + qx > 1.0E-5)then
+    ! Calculate ratio directly, consistent with melting_scheme_liu24
+    ! This function is kept for backward compatibility but is not used in melting schemes
+    ! Melting schemes calculate ratio directly: rats = qr / (qr + qs)
+    ! If qr + qx is very small, still calculate ratio correctly (unless both are zero)
+    if(qr + qx > 1.0d-10)then  ! Changed from 1.0E-5 to 1.0d-10 to be more permissive
        ratio = qr/(qr+qx)
     else
+      ! If sum is essentially zero, set ratio to 0 (no rain component)
+      ! Note: This is consistent with melting_scheme behavior when qr + qx < threshold
       ratio = 0.0d0
     endif
 
   end subroutine rainfrac
+
+  !-------------------------------------------------------------------
+  function get_dm_threshold_melting(temperature_celsius, species) result(dm_thresh)
+  !-------------------------------------------------------------------
+  ! Returns a temperature-dependent Dm threshold [mm] for melting 
+  ! inhibition. Used by get_dm_melting_factor() to decide:
+  !   Dm > dm_thresh  -->  melting is suppressed  (dm_factor -> 0)
+  !   Dm < dm_thresh  -->  melting proceeds normally (dm_factor -> 1)
+  !
+  ! Temperature interpolation:
+  !   T < thresh1 (-5C):  dm_thresh = dm_cold  (stricter, less melting)
+  !   T > thresh2 ( 0C):  dm_thresh = dm_warm  (relaxed, more melting)
+  !   thresh1 <= T <= thresh2:  linear interpolation between the two
+  !
+  ! Species-dependent values [mm]:
+  !   Species   dm_cold  dm_warm   (denser ice melts slower -> larger threshold)
+  !   Snow       1.0      2.0
+  !   Graupel    2.0      4.0
+  !   Hail       3.0      6.0
+  !-------------------------------------------------------------------
+    implicit none
+    real(kind=8), intent(in) :: temperature_celsius
+    character(len=*), intent(in), optional :: species
+    real(kind=8) :: dm_thresh
+    real(kind=8) :: dm_cold, dm_warm
+    real(kind=8), parameter :: thresh1 = -5.0d0  ! Cold-end temperature [C]
+    real(kind=8), parameter :: thresh2 =  0.0d0  ! Warm-end temperature [C]
+    
+    ! Species-dependent Dm thresholds at cold/warm ends
+    ! hrad to melt, when dm > dm_thresh
+    if (present(species)) then
+      select case (trim(species))
+        case ('snow')
+          dm_cold = 1.0d0;  dm_warm = 2.0d0   ! Fluffy, melts fast
+        case ('graupel')
+          dm_cold = 1.5d0;  dm_warm = 3.0d0   ! Medium density
+        case ('hail')
+          dm_cold = 2.0d0;  dm_warm = 4.0d0   ! Dense, melts slow
+        case default
+          dm_cold = 1.0d0;  dm_warm = 2.0d0   ! Default: same as snow
+      end select
+    else
+      dm_cold = 1.0d0;  dm_warm = 2.0d0       ! Default: same as snow
+    endif
+    
+    if (temperature_celsius < thresh1) then
+      dm_thresh = dm_cold
+    else if (temperature_celsius > thresh2) then
+      dm_thresh = dm_warm
+    else
+      ! Linear interpolation: thresh1 -> dm_cold, thresh2 -> dm_warm
+      dm_thresh = dm_cold + (temperature_celsius - thresh1) / (thresh2 - thresh1) * (dm_warm - dm_cold)
+    endif
+    
+  end function get_dm_threshold_melting
+
+  !-------------------------------------------------------------------
+  function get_dm_melting_factor(dm, dm_threshold, transition_width) result(factor)
+  !-------------------------------------------------------------------
+  ! Calculate smooth melting inhibition factor based on Dm
+  !
+  ! Uses sigmoid function to provide smooth transition:
+  !   factor = 1 / (1 + exp((dm - dm_threshold) / transition_width))
+  !
+  ! Behavior:
+  !   - When dm << dm_threshold: factor -> 1.0 (normal melting)
+  !   - When dm >> dm_threshold: factor -> 0.0 (no melting)
+  !   - Smooth transition around dm_threshold
+  !
+  ! Parameters:
+  !   dm: Mean diameter of pure ice particle [mm]
+  !   dm_threshold: Temperature-dependent Dm threshold [mm]
+  !   transition_width: Width of transition region [mm]
+  !
+  ! Returns:
+  !   factor: Melting inhibition factor [0-1]
+  !-------------------------------------------------------------------
+    implicit none
+    real(kind=8), intent(in) :: dm, dm_threshold, transition_width
+    real(kind=8) :: factor
+    
+    ! Sigmoid function for smooth transition
+    ! factor = 1 / (1 + exp((dm - dm_threshold) / transition_width))
+    if (transition_width > 0.0d0) then
+      factor = 1.0d0 / (1.0d0 + exp((dm - dm_threshold) / transition_width))
+    else
+      ! If transition_width is zero or negative, use hard cutoff
+      if (dm < dm_threshold) then
+        factor = 1.0d0
+      else
+        factor = 0.0d0
+      endif
+    endif
+    
+  end function get_dm_melting_factor
 
   !-------------------------------------------------------------------
   subroutine weticephase_density(precip_type, ratio, rho)
@@ -695,176 +870,77 @@ contains
   end subroutine watercontent
 
   !------------------------------------------------------------------------------
-  subroutine dm_z_2moment(air_density, qx, rhox, ntx, dm, z, dmmax)
+  subroutine dm_z_2moment(air_density, qx, rhox, ntx, dm, z, dmmax, dm_min)
   !-----------------------------------------------------------
   ! Eqs. (5) and (6) of Zhang et al., 2021
   ! Assume 2-moment MP scheme with ntx and qx as prognostic variables
   ! Exponential PSD: N(D) = N0 * exp(-lambda D)
+  !
+  ! Dm = 4 * ( (rho_air * qx) / (pi * rhox * ntx) )^(1/3)
+  ! Z  = 11250 * (rho_air * qx / (pi * rhox)) * Dm^3
+  !
+  ! Optional bounds:
+  !   dmmax: upper bound on Dm (caps unrealistically large diameters)
+  !   dm_min: lower bound on Dm; if Dm < dm_min, set Dm=0 and Z=0.
+  !           Use 0.3 mm for ice species (snow/graupel/hail) since
+  !           sub-0.3mm particles are cloud-ice scale. Do NOT pass
+  !           for rain (drizzle Dm ~ 0.1-0.3 mm is physical).
+  !
+  ! Regularization (enable_dm_regularization = .true.):
+  !   When both qx and ntx are very small (qx < 1e-3 g/kg AND
+  !   ntx < 1000 /m^3), the particle population is physically
+  !   meaningless and dm is set to 0. Otherwise, standard formula
+  !   is used (caller ensures ntx >= ntx_min=10 for zero protection).
+  !
+  ! Without regularization:
+  !   Standard formula with basic ntx > 0 protection.
   !-------------------------------------------------------------------
     implicit none
     real(kind=8), intent(in)   :: air_density   ! Air Density, 1.225 kg/m^3 
     real(kind=8), intent(in)   :: rhox          ! density of wet hydrometeor,g/cm^3 
                                                 ! rain density = 1 g/cm^3
     real(kind=8), intent(in)   :: qx            ! mixing ratio of hydrometeor, g/kg
-    real(kind=8), intent(in)   :: ntx           ! number concentration, ?/m^3
-    real(kind=8), intent(in), optional   :: dmmax         ! maximum mean diameter
+    real(kind=8), intent(in)   :: ntx           ! number concentration, /m^3
+    real(kind=8), intent(in), optional   :: dmmax         ! maximum mean diameter, mm
+    real(kind=8), intent(in), optional   :: dm_min        ! minimum meaningful Dm, mm
     real(kind=8), intent(out)  :: dm            ! mean diameter, mm
     real(kind=8), intent(out)  :: z             ! 6th moment of PSD
 
-    dm = 4.0 * ((air_density * qx) / (dpi * rhox * ntx)) ** (1.0 / 3.0)
-    dm = dm * 10.0 ! cm -> mm   
-    if(present(dmmax))then
-       dm = min(dm, dmmax) !to avoid extremely large diameter due to very small ntx
+    if (enable_dm_regularization) then
+      ! When both qx and ntx are small, particle population is negligible
+      ! qx < 1e-3 g/kg: very small mixing ratio
+      ! ntx < 1000 /m^3 (= 1/L): statistically unreliable sample
+      if (qx < 1.0d-3 .and. ntx < 1000.0d0) then
+        dm = 0.0d0
+      else
+        ! Standard calculation (caller guarantees ntx >= ntx_min=10)
+        dm = 4.0d0 * ((air_density * qx) / (dpi * rhox * ntx)) ** (1.0d0 / 3.0d0)
+        dm = dm * 10.0d0 ! cm -> mm
+      endif
+    else
+      ! No regularization: standard calculation with basic protection
+      if (ntx < 1.0d0) then
+        ! Prevent division by zero / near-zero
+        dm = 0.0d0
+      else
+        dm = 4.0d0 * ((air_density * qx) / (dpi * rhox * ntx)) ** (1.0d0 / 3.0d0)
+        dm = dm * 10.0d0 ! cm -> mm
+      endif
     endif
 
-     z = 11250.0 * ( (air_density*qx)/(dpi*rhox) )* dm**3
+    if (present(dmmax)) then
+      dm = min(dm, dmmax) ! physical upper bound on particle diameter
+    endif
+
+    ! Optional lower bound: Dm below dm_min has no physical meaning
+    ! (e.g., 0.3 mm for ice species = cloud-ice scale, not precipitation)
+    if (present(dm_min)) then
+      if (dm < dm_min) dm = 0.0d0
+    endif
+
+    z = 11250.0d0 * ((air_density * qx) / (dpi * rhox)) * dm**3
 
   end subroutine dm_z_2moment
-
-   !---------------------------------------------------------------------------
-  subroutine melting_scheme_zhang24( &
-    qr, qs, qg, &
-    qms, qmg, qpr, qps, qpg, rats, ratg, &
-    ntr, nts, ntg, &
-    ntms, ntmg, ntpr, ntps, ntpg, &
-    qh, nth, rath, qmh, qph, ntmh, ntph, qx_min, ntx_min, coeff_melt )
-  !---------------------------------------------------------------------------
-  ! Eq. (15-18) of Zhang et al., 2024
-  ! Assume 2-moment MP scheme with ntx and qx as prognostic variables
-  ! Exponential PSD: N(D) = N0 * exp(-lambda D)
-  !---------------------------------------------------------------------------
-    implicit none
-    real(kind=8), intent(in)   :: qr            ! mixing ratio of raw rain, g/kg
-    real(kind=8), intent(in)   :: qs            ! mixing ratio of raw snow, g/kg
-    real(kind=8), intent(in)   :: qg            ! mixing ratio of raw graupel, g/kg
-    real(kind=8), intent(out)  :: qms           ! mixing ratio of melting snow, g/kg
-    real(kind=8), intent(out)  :: qmg           ! mixing ratio of melting graupel, g/kg
-    real(kind=8), intent(out)  :: qpr           ! mixing ratio of pure rain, g/kg
-    real(kind=8), intent(out)  :: qps           ! mixing ratio of pure snow, g/kg
-    real(kind=8), intent(out)  :: qpg           ! mixing ratio of pure graupel, g/kg
-    real(kind=8), intent(out)  :: rats          ! mass water fraction of melting snow, [0-1]
-    real(kind=8), intent(out)  :: ratg          ! mass water fraction of melting graupel, [0-1]
-    real(kind=8), intent(in), optional   :: ntr           ! number concentration of raw rain, -/m3
-    real(kind=8), intent(in), optional   :: nts           ! number concentration of raw snow, -/m3
-    real(kind=8), intent(in), optional   :: ntg           ! number concentration of raw graupel, -/m3
-    real(kind=8), intent(out), optional  :: ntms          ! number concentration of melting snow, -/m3
-    real(kind=8), intent(out), optional  :: ntmg          ! number concentration of melting graupel, -/m3
-    real(kind=8), intent(out), optional  :: ntpr          ! number concentration of pure rain, -/m3
-    real(kind=8), intent(out), optional  :: ntps          ! number concentration of pure snow, -/m3
-    real(kind=8), intent(out), optional  :: ntpg          ! number concentration of pure graupel, -/m3
-    ! For hail
-    real(kind=8), intent(in), optional   :: qh            ! mixing ratio of raw hail, g/kg
-    real(kind=8), intent(in), optional   :: nth           ! number concentration of raw hail, -/m3
-    real(kind=8), intent(out), optional  :: rath          ! mass water fraction of melting hail, [0-1]
-    real(kind=8), intent(out), optional  :: qmh           ! mixing ratio of melting hail, g/kg
-    real(kind=8), intent(out), optional  :: qph           ! mixing ratio of pure hail, g/kg
-    real(kind=8), intent(out), optional  :: ntmh          ! number concentration of melting hail, -/m3
-    real(kind=8), intent(out), optional  :: ntph          ! number concentration of pure hail, -/m3
-
-
-    real(kind=8) :: qmsr, qmgr, qmsd, qmgd, qmhr, qmhd
-    real(kind=8) :: melt_coeff
-    logical      :: dm ! double moment
-    real(kind=8), intent(in), optional  ::  qx_min(7), ntx_min(7)
-    real(kind=8), intent(in), optional  ::  coeff_melt    ! tuning coefficient for melting
-
-   ! Check if double moment
-
-    dm = .false.
-    if (present(ntr) .or. present(nts) .or. present(ntg) .or. present(nth)) then
-        dm = .true.
-    else
-        print *, "Please specify output for number concentrations of the melting scheme"
-        stop
-    endif
-    
-    ! Initialize melting coefficient (default 0.3, or from parameter)
-    if (present(coeff_melt)) then
-      melt_coeff = coeff_melt
-    else
-      melt_coeff = 0.3d0
-    endif
-    
-    ! Compute melting mixing ratios with tuning coefficient
-    ! Skip melting if qr + qx < qsum_min_threshold (avoid division by zero)
-    IF (qr + qs < qsum_min_threshold) THEN
-      qms = 0.0d0
-      rats = 0.0d0
-    ELSE
-      qms  = sqrt(qr * qs) * melt_coeff
-      qms = max(qms, qx_min(2))
-      rats = qr / (qr + qs)
-    ENDIF
-
-    IF (qr + qg < qsum_min_threshold) THEN
-      qmg = 0.0d0
-      ratg = 0.0d0
-    ELSE
-      qmg  = sqrt(qr * qg) * melt_coeff
-      qmg = max(qmg, qx_min(3))
-      ratg = qr / (qr + qg)
-    ENDIF
-
-    if (present(qh)) then
-      IF (qr + qh < qsum_min_threshold) THEN
-        qmh = 0.0d0
-        rath = 0.0d0
-      ELSE
-        qmh = sqrt(qr * qh) * melt_coeff
-        qmh = max(qmh, qx_min(4))
-        rath = qr / (qr + qh)
-      ENDIF
-    endif
-
-    qmsr = qms * rats
-    qmgr = qmg * ratg
-    qmsd = qms * (1.0 - rats)
-    qmgd = qmg * (1.0 - ratg)
-   
-    if (present(qh)) then
-       qmhr = qmh * rath
-       qmhd = qmh * (1.0 - rath)
-    endif
-
-    qpr = qr - qmsr - qmgr
-    qps = qs - qmsd
-    qpg = qg - qmgd
-    if (present(qh)) then
-       qpr = qpr - qmhr
-       qph = qh - qmhd
-    endif
-
-    qpr = max(qpr, qx_min(1))
-    qps = max(qps, qx_min(5))
-    qpg = max(qpg, qx_min(6))
-    if (present(qh)) qph = max(qph, qx_min(7))
-
-
-
-    if (dm) then
-      if(present(nts) .and. present(ntr) .and. present(ntms)) then
-         ntms = sqrt(ntr * nts) * melt_coeff
-         ntms = max(ntms, ntx_min(2))
-      endif
-
-      if(present(ntg) .and. present(ntr) .and. present(ntmg)) then
-         ntmg = sqrt(ntr * ntg) * melt_coeff
-         ntmg = max(ntmg, ntx_min(3))
-      endif
-
-      if (present(nth) .and. present(ntr) .and. present(ntmh)) then
-         ntmh = sqrt(ntr * nth) * melt_coeff
-         ntmh = max(ntmh, ntx_min(4))
-      endif
-
-      if(present(ntr)) ntpr = max(ntr,ntx_min(1))
-      if(present(nts)) ntps = max(nts,ntx_min(5))
-      if(present(ntg)) ntpg = max(ntg,ntx_min(6))
-      if(present(nth)) ntph = max(nth,ntx_min(7))
-
-    endif
-
-  end subroutine melting_scheme_zhang24
 
   !---------------------------------------------------------------------------
   subroutine melting_scheme_liu24( &
@@ -872,13 +948,29 @@ contains
     qms, qmg, qpr, qps, qpg, rats, ratg, &
     ntr, nts, ntg, &
     ntms, ntmg, ntpr, ntps, ntpg, &
-    qh, nth, rath, qmh, qph, ntmh, ntph, qx_min, ntx_min, coeff_melt )
+    qh, nth, rath, qmh, qph, ntmh, ntph, qx_min, ntx_min, coeff_melt, &
+    density_air, temperature )
   !---------------------------------------------------------------------------
   ! Liu et al., 2024 melting scheme (original sqrt formula)
   ! qms = sqrt(qr * qs), qmg = sqrt(qr * qg), qmh = sqrt(qr * qh)
   ! Eq. (15-18) of Zhang et al., 2024
   ! Assume 2-moment MP scheme with ntx and qx as prognostic variables
   ! Exponential PSD: N(D) = N0 * exp(-lambda D)
+  !
+  ! Optional parameters:
+  !   density_air: Air density [kg/m^3], needed for Dm calculation
+  !   temperature: Air temperature [°C], needed for Dm-based melting limit
+  !
+  ! Special treatment and QC added by Rong Kong (NCAR/MMM):
+  !   - Temperature-dependent Dm-based melting inhibition: Large pure ice
+  !     particles (Dm > threshold) are less likely to melt, with threshold
+  !     depending on temperature (1.0 mm at T < -5°C, 2.0 mm at T > 0°C).
+  !   - Uses smooth sigmoid transition function to avoid discontinuities.
+  !   - Quality control: Only calculates Dm when mixing ratios are non-negligible
+  !     (qs/qg/qh > 1.0d-6) to avoid numerical issues.
+  !   - Important: Without the qsum_min_threshold and Dm-based threshold
+  !     checks, melting species (qms, qmg, qmh) would be overestimated,
+  !     leading to unrealistic melting of small or large particles.
   !---------------------------------------------------------------------------
     implicit none
     real(kind=8), intent(in)   :: qr            ! mixing ratio of raw rain, g/kg
@@ -907,19 +999,28 @@ contains
     real(kind=8), intent(out), optional  :: qph           ! mixing ratio of pure hail, g/kg
     real(kind=8), intent(out), optional  :: ntmh          ! number concentration of melting hail, -/m3
     real(kind=8), intent(out), optional  :: ntph          ! number concentration of pure hail, -/m3
+    real(kind=8), intent(in), optional  ::  qx_min(7), ntx_min(7)
+    real(kind=8), intent(in), optional  ::  coeff_melt    ! tuning coefficient for melting
+    real(kind=8), intent(in), optional  ::  density_air   ! Air density [kg/m^3], for Dm calculation
+    real(kind=8), intent(in), optional  ::  temperature   ! Air temperature [°C], for Dm-based melting limit
+
 
     real(kind=8) :: qmsr, qmgr, qmsd, qmgd, qmhr, qmhd
     real(kind=8) :: melt_coeff
     real(kind=8) :: balance, factor_s, factor_g, factor_h  ! For melting transition
     real(kind=8) :: eff_coeff_s, eff_coeff_g, eff_coeff_h  ! Effective melt coefficient = melt_coeff * factor
-    logical      :: dm ! double moment
-    real(kind=8), intent(in), optional  ::  qx_min(7), ntx_min(7)
-    real(kind=8), intent(in), optional  ::  coeff_melt    ! tuning coefficient for melting
+    logical      :: double_moment ! Flag for 2-moment microphysics scheme
+    
+    ! Variables for Dm-based melting limit
+    real(kind=8) :: dm_pure_snow, dm_pure_graupel, dm_pure_hail
+    real(kind=8) :: dm_thresh_snow, dm_thresh_graupel, dm_thresh_hail
+    real(kind=8) :: dm_factor_s, dm_factor_g, dm_factor_h
+    real(kind=8) :: zs_temp, zg_temp, zh_temp  ! Temporary variables for Dm calculation
 
    ! Check if double moment (2-moment scheme has number concentrations)
-    dm = .false.
+    double_moment = .false.
     if (present(ntr) .or. present(nts) .or. present(ntg) .or. present(nth)) then
-        dm = .true.
+        double_moment = .true.
     endif
     
     ! Initialize factors to 1.0 (no transition adjustment by default)
@@ -931,7 +1032,7 @@ contains
     eff_coeff_s = 0.0d0
     eff_coeff_g = 0.0d0
     eff_coeff_h = 0.0d0
-    ! Note: WSM6 (1-moment) doesn't pass any number concentrations, dm=.false. is valid
+    ! Note: WSM6 (1-moment) doesn't pass any number concentrations, double_moment=.false. is valid
     
     ! Initialize melting coefficient (default 0.3, or from parameter)
     if (present(coeff_melt)) then
@@ -939,6 +1040,80 @@ contains
     else
       melt_coeff = 0.3d0
     endif
+    
+    ! Initialize Dm-based melting factors (default to 1.0, no inhibition)
+    ! Special treatment added by Rong Kong (NCAR/MMM): Temperature-dependent
+    ! Dm-based melting inhibition to prevent large pure ice particles from melting
+    dm_factor_s = 1.0d0
+    dm_factor_g = 1.0d0
+    dm_factor_h = 1.0d0
+    
+    ! Calculate Dm-based melting inhibition factors if enabled
+    ! QC: Only calculate when enable_dm_melting_limit is true and both
+    ! temperature and density_air are provided
+    IF (enable_dm_melting_limit .and. present(temperature) .and. present(density_air)) THEN
+      ! Calculate Dm threshold based on temperature (species-dependent)
+      dm_thresh_snow = get_dm_threshold_melting(temperature, 'snow')
+      dm_thresh_graupel = get_dm_threshold_melting(temperature, 'graupel')
+      dm_thresh_hail = get_dm_threshold_melting(temperature, 'hail')
+      
+      ! Calculate pure ice Dm before melting (for snow)
+      ! QC: Only calculate when qs is non-negligible to avoid numerical issues
+      if (qs > 1.0d-6) then
+        if (present(nts) .and. nts > 1.0d-6) then
+          ! 2-moment: calculate Dm from qs and nts
+          call dm_z_2moment(density_air, qs, density_snow, nts, dm_pure_snow, zs_temp, dmmax=dmmax_pure_snow)
+        else
+          ! 1-moment: use WSM6 method (temperature is guaranteed to be present due to outer IF condition)
+          call dm_z_wsm6('snow', density_air, temperature + 273.15d0, qs, density_snow, dm_pure_snow, zs_temp, dmmax_pure_snow)
+        endif
+        
+        if (dm_pure_snow >= 0.3d0) then
+          dm_factor_s = get_dm_melting_factor(dm_pure_snow, dm_thresh_snow, dm_melting_transition_width)
+        else
+          ! Dm < 0.3 mm: sub-cloud-particle scale, not physically meaningful
+          ! as a melting species -> suppress melting entirely
+          dm_factor_s = 0.0d0
+        endif
+      endif
+      
+      ! Calculate pure ice Dm before melting (for graupel)
+      ! QC: Only calculate when qg is non-negligible to avoid numerical issues
+      if (qg > 1.0d-6) then
+        if (present(ntg) .and. ntg > 1.0d-6) then
+          ! 2-moment: calculate Dm from qg and ntg
+          call dm_z_2moment(density_air, qg, density_graupel, ntg, dm_pure_graupel, zg_temp, dmmax=dmmax_pure_graupel)
+        else
+          ! 1-moment: use WSM6 method (temperature is guaranteed to be present due to outer IF condition)
+          call dm_z_wsm6('graupel', density_air, temperature + 273.15d0, qg, density_graupel, dm_pure_graupel, zg_temp, dmmax_pure_graupel)
+        endif
+        
+        if (dm_pure_graupel >= 0.3d0) then
+          dm_factor_g = get_dm_melting_factor(dm_pure_graupel, dm_thresh_graupel, dm_melting_transition_width)
+        else
+          dm_factor_g = 0.0d0
+        endif
+      endif
+      
+      ! Calculate pure ice Dm before melting (for hail)
+      ! QC: Only calculate when qh is present and non-negligible to avoid numerical issues
+      ! Same treatment as graupel: use standard threshold (no special qh-based adjustment)
+      if (present(qh) .and. qh > 1.0d-6) then
+        if (present(nth) .and. nth > 1.0d-6) then
+          ! 2-moment: calculate Dm from qh and nth
+          call dm_z_2moment(density_air, qh, density_hail, nth, dm_pure_hail, zh_temp, dmmax=dmmax_pure_hail)
+        else
+          ! 1-moment: use WSM6 method (temperature is guaranteed to be present due to outer IF condition)
+          call dm_z_wsm6('hail', density_air, temperature + 273.15d0, qh, density_hail, dm_pure_hail, zh_temp, dmmax_pure_hail)
+        endif
+        
+        if (dm_pure_hail >= 0.3d0) then
+          dm_factor_h = get_dm_melting_factor(dm_pure_hail, dm_thresh_hail, dm_melting_transition_width)
+        else
+          dm_factor_h = 0.0d0
+        endif
+      endif
+    ENDIF
     
     ! Compute melting mixing ratios with tuning coefficient
     ! When enable_melting_transition is true, use smooth transition function
@@ -950,6 +1125,8 @@ contains
     ! =========================================================================
     ! Snow melting
     ! =========================================================================
+    ! QC: Skip melting if qr + qs is below qsum_min_threshold to avoid
+    ! overestimation of melting species from negligible mixing ratios
     IF (qr + qs < qsum_min_threshold) THEN
       ! Skip melting if qr + qs is essentially zero (avoid division by zero)
       qms = 0.0d0
@@ -970,8 +1147,10 @@ contains
       ENDIF
       
       ! Apply factor to melt_coeff for consistent qms and ntms calculation
-      eff_coeff_s = melt_coeff * factor_s
-      qms = sqrt(qr * qs) * eff_coeff_s
+      ! Also apply Dm-based melting inhibition factor to prevent overestimation
+      ! of melting species for large particles (Dm > threshold)
+      eff_coeff_s = melt_coeff * factor_s * dm_factor_s
+      qms = sqrt(qr * qs) * eff_coeff_s      ! Zhang et al. 2021 Eq. 14
       rats = qr / (qr + qs)
       qms = max(qms, qx_min(2))
     ENDIF
@@ -979,6 +1158,8 @@ contains
     ! =========================================================================
     ! Graupel melting
     ! =========================================================================
+    ! QC: Skip melting if qr + qg is below qsum_min_threshold to avoid
+    ! overestimation of melting species from negligible mixing ratios
     IF (qr + qg < qsum_min_threshold) THEN
       ! Skip melting if qr + qg is essentially zero (avoid division by zero)
       qmg = 0.0d0
@@ -999,8 +1180,10 @@ contains
       ENDIF
       
       ! Apply factor to melt_coeff for consistent qmg and ntmg calculation
-      eff_coeff_g = melt_coeff * factor_g
-      qmg = sqrt(qr * qg) * eff_coeff_g
+      ! Also apply Dm-based melting inhibition factor to prevent overestimation
+      ! of melting species for large particles (Dm > threshold)
+      eff_coeff_g = melt_coeff * factor_g * dm_factor_g
+      qmg = sqrt(qr * qg) * eff_coeff_g      ! Zhang et al. 2021 Eq. 14
       ratg = qr / (qr + qg)
       qmg = max(qmg, qx_min(3))
     ENDIF
@@ -1009,6 +1192,8 @@ contains
     ! Hail melting
     ! =========================================================================
     if (present(qh)) then
+      ! QC: Skip melting if qr + qh is below qsum_min_threshold to avoid
+      ! overestimation of melting species from negligible mixing ratios
       IF (qr + qh < qsum_min_threshold) THEN
         ! Skip melting if qr + qh is essentially zero (avoid division by zero)
         qmh = 0.0d0
@@ -1029,8 +1214,10 @@ contains
         ENDIF
         
         ! Apply factor to melt_coeff for consistent qmh and ntmh calculation
-        eff_coeff_h = melt_coeff * factor_h
-        qmh = sqrt(qr * qh) * eff_coeff_h
+        ! Also apply Dm-based melting inhibition factor to prevent overestimation
+        ! of melting species for large particles (Dm > threshold)
+        eff_coeff_h = melt_coeff * factor_h * dm_factor_h
+        qmh = sqrt(qr * qh) * eff_coeff_h      ! Zhang et al. 2021 Eq. 14
         rath = qr / (qr + qh)
         qmh = max(qmh, qx_min(4))
       ENDIF
@@ -1043,14 +1230,11 @@ contains
        qmhr = qmh * rath
     endif
 
-    ! Limit melting water content (optional, configurable via YAML)
-    ! When enable_melting_water_limit = .false. (default), no limit (= public behavior)
-    ! When enable_melting_water_limit = .true., limit to melting_water_fraction * qr
-    if (enable_melting_water_limit) then
-      qmsr = min(qmsr, melting_water_fraction * qr)
-      qmgr = min(qmgr, melting_water_fraction * qr)
-      if (present(qh)) qmhr = min(qmhr, melting_water_fraction * qr)
-    endif
+    ! Limit melting water content: qmxr <= melting_water_fraction * qr
+    ! Default 1.0 = ensure qmxr <= qr (physical constraint); < 1.0 = tighter limit
+    qmsr = min(qmsr, melting_water_fraction * qr)
+    qmgr = min(qmgr, melting_water_fraction * qr)
+    if (present(qh)) qmhr = min(qmhr, melting_water_fraction * qr)
 
     ! Recalculate dry component to maintain mass conservation: qmsd = qms - qmsr
     qmsd = qms - qmsr
@@ -1070,12 +1254,18 @@ contains
     qpg = max(qpg, qx_min(6))
     if (present(qh)) qph = max(qph, qx_min(7))
 
-    if (dm) then
+
+
+    if (double_moment) then
       ! Number concentration for melting species
-      ! Use minimum value when qmx is too small to avoid division issues in dm calculation
+      ! Use minimum value when qmx is too small to avoid division issues in Dm calculation
       if(present(nts) .and. present(ntr) .and. present(ntms)) then
          if (qms > 1.0d-3) then
-           ntms = sqrt(ntr * nts) * eff_coeff_s  ! Use same effective coefficient as qms
+           if (melting_rain_exponent < 0.5d0 .and. qr > qs) then
+             ntms = (ntr**melting_rain_exponent) * (nts**(1.0d0 - melting_rain_exponent)) * eff_coeff_s
+           else
+             ntms = sqrt(ntr * nts) * eff_coeff_s
+           endif
            ntms = max(ntms, ntx_min(2))
          else
            ntms = ntx_min(2)
@@ -1084,7 +1274,11 @@ contains
 
       if(present(ntg) .and. present(ntr) .and. present(ntmg)) then
          if (qmg > 1.0d-3) then
-           ntmg = sqrt(ntr * ntg) * eff_coeff_g  ! Use same effective coefficient as qmg
+           if (melting_rain_exponent < 0.5d0 .and. qr > qg) then
+             ntmg = (ntr**melting_rain_exponent) * (ntg**(1.0d0 - melting_rain_exponent)) * eff_coeff_g
+           else
+             ntmg = sqrt(ntr * ntg) * eff_coeff_g
+           endif
            ntmg = max(ntmg, ntx_min(3))
          else
            ntmg = ntx_min(3)
@@ -1093,7 +1287,11 @@ contains
 
       if (present(nth) .and. present(ntr) .and. present(ntmh)) then
          if (present(qh) .and. qmh > 1.0d-3) then
-           ntmh = sqrt(ntr * nth) * eff_coeff_h  ! Use same effective coefficient as qmh
+           if (melting_rain_exponent < 0.5d0 .and. qr > qh) then
+             ntmh = (ntr**melting_rain_exponent) * (nth**(1.0d0 - melting_rain_exponent)) * eff_coeff_h
+           else
+             ntmh = sqrt(ntr * nth) * eff_coeff_h
+           endif
            ntmh = max(ntmh, ntx_min(4))
          else
            ntmh = ntx_min(4)
@@ -1271,10 +1469,11 @@ contains
    end subroutine n0_lambda_wsm6
 
   !------------------------------------------------------------------------------
-  subroutine dm_z_wsm6(precip_type, air_density, temp, qx, rhox, dm, z, dmmax)
+  subroutine dm_z_wsm6(precip_type, air_density, temp, qx, rhox, dm, z, dmmax, dm_min)
   !------------------------------------------------------------------------
   ! Single moment scheme assuming Exponential PSD: N(D) = N0 * exp(-lambda D)
   ! N0 is fixed except for snow, then calcuate lambda from N0
+  ! Optional dm_min: lower bound on Dm (use 0.3 for ice, omit for rain)
   !-------------------------------------------------------------------
     implicit none
     character (len=*), intent(in) :: precip_type  ! rain/snow/graupel
@@ -1284,6 +1483,7 @@ contains
     real(kind=8), intent(in)   :: temp          ! temperature, Kelvin
     real(kind=8), intent(in)   :: qx            ! mixing ratio of hydrometeor, g/kg
     real(kind=8), intent(in),optional   :: dmmax         ! maximum mean diameter
+    real(kind=8), intent(in),optional   :: dm_min        ! minimum meaningful Dm, mm
     real(kind=8), intent(out)  :: dm            ! mean diameter, mm
     real(kind=8), intent(out)  :: z             ! 6th moment of PSD
 
@@ -1296,6 +1496,11 @@ contains
 
     if(present(dmmax))then
        dm = min(dm, dmmax) !to avoid extremely large diameter due to very small ntx
+    endif
+
+    ! Optional lower bound for ice species
+    if (present(dm_min)) then
+      if (dm < dm_min) dm = 0.0d0
     endif
 
     z = 11250.0 * ( (air_density*qx)/(dpi*rhox) )* dm**3 ! Eq. (6)
@@ -1519,11 +1724,19 @@ end function lin_interp
     real(kind=8) :: qx_min(7), ntx_min(7)
     real(kind=8) :: dmmax(7)
     real(kind=8) :: dm(7)  ! Array of mean diameters: [pr, ms, mg, mh, ps, pg, ph]
+    real(kind=8) :: temperature_celsius  ! Temperature in Celsius for melting scheme
+    
+    ! Convert temperature from Kelvin to Celsius if provided
+    if (present(temperature)) then
+      temperature_celsius = temperature  ! Assume temperature is already in Celsius
+    else
+      ! If temperature not provided, convert from temp_air (Kelvin) to Celsius
+      temperature_celsius = temp_air - 273.15d0
+    endif
     
     ! Initialize parameters
     qx_min = 0.0d0
-    !ntx_min = 0.0d0  ! lead to stronger refl bkg/ana
-    ntx_min = 10.0d0
+    ntx_min = 10.0d0  ! Same as code_develop: nx_min = 10.0
     ! Use individual dmmax values (configurable via YAML, with defaults)
     ! Index: 1=pr, 2=ms, 3=mg, 4=mh, 5=ps, 6=pg, 7=ph
     dmmax(1) = dmmax_rain
@@ -1566,52 +1779,40 @@ end function lin_interp
     if (present(ng)) ngreg = max(ntx_min(6), ng)
     if (present(nh)) nhreg = max(ntx_min(7), nh)
     
-    ! Call melting scheme based on microphysics type and melting_scheme_option
-    ! Select melting scheme based on melting_scheme_option:
-    !   'liu24' = sqrt formula (default)
-    !   'zhang24' = original zhang24 scheme (backward compatibility)
+    ! Call liu24 melting scheme (sqrt formula)
+    if (present(nr) .and. present(ns) .and. present(ng) .and. present(nh) .and. present(qh)) then
+      call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
+           ntr=nrreg, nts=nsreg, ntg=ngreg, ntms=ntms, ntmg=ntmg, ntpr=ntpr, ntps=ntps, ntpg=ntpg, &
+           qh=qhreg, nth=nhreg, rath=rath, qmh=qmh, qph=qph, ntmh=ntmh, ntph=ntph, &
+           qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt, &
+           density_air=density_air, temperature=temperature_celsius)
+    elseif (present(nr) .and. present(ns) .and. present(ng)) then
+      call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
+           ntr=nrreg, nts=nsreg, ntg=ngreg, ntms=ntms, ntmg=ntmg, ntpr=ntpr, ntps=ntps, ntpg=ntpg, &
+           qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt, &
+           density_air=density_air, temperature=temperature_celsius)
+    elseif (present(nr)) then
+      call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
+           ntr=nrreg, ntpr=ntpr, qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt, &
+           density_air=density_air, temperature=temperature_celsius)
+    else
+      call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
+           qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt, &
+           density_air=density_air, temperature=temperature_celsius)
+    endif
     
-    select case (trim(melting_scheme_option))
-    case ('zhang24', 'Zhang24', 'ZHANG24')  ! Original zhang24 scheme (backward compatibility)
-      if (present(nr) .and. present(ns) .and. present(ng) .and. present(nh) .and. present(qh)) then
-        ! NSSL scheme
-        call melting_scheme_zhang24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             ntr=nrreg, nts=nsreg, ntg=ngreg, ntms=ntms, ntmg=ntmg, ntpr=ntpr, ntps=ntps, ntpg=ntpg, &
-             qh=qhreg, nth=nhreg, rath=rath, qmh=qmh, qph=qph, ntmh=ntmh, ntph=ntph, &
-             qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      elseif (present(nr) .and. present(ns) .and. present(ng)) then
-        ! TCWA2 scheme
-        call melting_scheme_zhang24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             ntr=nrreg, nts=nsreg, ntg=ngreg, ntms=ntms, ntmg=ntmg, ntpr=ntpr, ntps=ntps, ntpg=ntpg, &
-             qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      elseif (present(nr) .and. .not. present(ns) .and. .not. present(ng)) then
-        ! Thompson scheme
-        call melting_scheme_zhang24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             ntr=nrreg, ntpr=ntpr, qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      else
-        ! WSM6 scheme
-        call melting_scheme_zhang24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      endif
-      
-    case default  ! liu24: sqrt formula (default, also matches 'liu24', 'Liu24', 'LIU24', or any other value)
-      if (present(nr) .and. present(ns) .and. present(ng) .and. present(nh) .and. present(qh)) then
-        call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             ntr=nrreg, nts=nsreg, ntg=ngreg, ntms=ntms, ntmg=ntmg, ntpr=ntpr, ntps=ntps, ntpg=ntpg, &
-             qh=qhreg, nth=nhreg, rath=rath, qmh=qmh, qph=qph, ntmh=ntmh, ntph=ntph, &
-             qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      elseif (present(nr) .and. present(ns) .and. present(ng)) then
-        call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             ntr=nrreg, nts=nsreg, ntg=ngreg, ntms=ntms, ntmg=ntmg, ntpr=ntpr, ntps=ntps, ntpg=ntpg, &
-             qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      elseif (present(nr) .and. .not. present(ns) .and. .not. present(ng)) then
-        call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             ntr=nrreg, ntpr=ntpr, qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      else
-        call melting_scheme_liu24(qrreg, qsreg, qgreg, qms, qmg, qpr, qps, qpg, rats, ratg, &
-             qx_min=qx_min, ntx_min=ntx_min, coeff_melt=coeff_melt)
-      endif
-    end select
+    ! -------------------------------------------------------------------------
+    ! Apply melting fraction tuning coefficients (default 1.0 = no change)
+    ! -------------------------------------------------------------------------
+    if (tuning_melt_frac_snow /= 1.0d0) then
+      rats = min(tuning_melt_frac_snow * rats, 1.0d0)
+    endif
+    if (tuning_melt_frac_graupel /= 1.0d0) then
+      ratg = min(tuning_melt_frac_graupel * ratg, 1.0d0)
+    endif
+    if (present(qh) .and. tuning_melt_frac_hail /= 1.0d0) then
+      rath = min(tuning_melt_frac_hail * rath, 1.0d0)
+    endif
     
     ! Regularize melting scheme outputs
     qpr = max(qx_min(1), qpr)
@@ -1638,15 +1839,25 @@ end function lin_interp
     else
       call dm_z_wsm6('rain', density_air, temp_air, qpr, density_rain, dmpr, zpr, dmmax=dmmax(1))
     endif
+    ! Apply rain Dm tuning coefficient (default 1.0 = no change)
+    if (tuning_dm_rain /= 1.0d0) then
+      dmpr = tuning_dm_rain * dmpr
+      zpr  = zpr * tuning_dm_rain**3  ! z ∝ dm^3
+    endif
     call dualpol_op_rain(wpr, dmpr, rain_coefs, zhpr, zdrpr, kdppr, phvpr)
     
     ! 2. Melting snow
     call watercontent(density_air, qms, wms)
     call weticephase_density('snow', rats, denms)
     if (present(ns)) then
-      call dm_z_2moment(density_air, qms, denms, ntms, dmms, zms, dmmax=dmmax(2))
+      call dm_z_2moment(density_air, qms, denms, ntms, dmms, zms, dmmax=dmmax(2), dm_min=0.3d0)
     else
-      call dm_z_wsm6('snow', density_air, temp_air, qms, denms, dmms, zms, dmmax=dmmax(2))
+      call dm_z_wsm6('snow', density_air, temp_air, qms, denms, dmms, zms, dmmax=dmmax(2), dm_min=0.3d0)
+    endif
+    ! Apply melting snow Dm tuning coefficient (default 1.0 = no change)
+    if (tuning_dm_melting_snow /= 1.0d0) then
+      dmms = tuning_dm_melting_snow * dmms
+      zms  = zms * tuning_dm_melting_snow**3
     endif
     do i = 0,12
       call coef_a(snow_coefs(i,0:3), rats, as(i))
@@ -1656,9 +1867,14 @@ end function lin_interp
     ! 3. Pure snow
     call watercontent(density_air, qps, wps)
     if (present(ns)) then
-      call dm_z_2moment(density_air, qps, density_snow, ntps, dmps, zps, dmmax=dmmax(5))
+      call dm_z_2moment(density_air, qps, density_snow, ntps, dmps, zps, dmmax=dmmax(5), dm_min=0.3d0)
     else
-      call dm_z_wsm6('snow', density_air, temp_air, qps, density_snow, dmps, zps, dmmax=dmmax(5))
+      call dm_z_wsm6('snow', density_air, temp_air, qps, density_snow, dmps, zps, dmmax=dmmax(5), dm_min=0.3d0)
+    endif
+    ! Apply pure snow Dm tuning coefficient (default 1.0 = no change)
+    if (tuning_dm_pure_snow /= 1.0d0) then
+      dmps = tuning_dm_pure_snow * dmps
+      zps  = zps * tuning_dm_pure_snow**3
     endif
     call dualpol_op_icephase(zps, wps, density_snow, dmps, snow_a, zhps, zdrps, kdpps, phvps)
     
@@ -1666,9 +1882,14 @@ end function lin_interp
     call watercontent(density_air, qmg, wmg)
     call weticephase_density('graupel', ratg, denmg)
     if (present(ng)) then
-      call dm_z_2moment(density_air, qmg, denmg, ntmg, dmmg, zmg, dmmax=dmmax(3))
+      call dm_z_2moment(density_air, qmg, denmg, ntmg, dmmg, zmg, dmmax=dmmax(3), dm_min=0.3d0)
     else
-      call dm_z_wsm6('graupel', density_air, temp_air, qmg, denmg, dmmg, zmg, dmmax=dmmax(3))
+      call dm_z_wsm6('graupel', density_air, temp_air, qmg, denmg, dmmg, zmg, dmmax=dmmax(3), dm_min=0.3d0)
+    endif
+    ! Apply melting graupel Dm tuning coefficient (default 1.0 = no change)
+    if (tuning_dm_melting_graupel /= 1.0d0) then
+      dmmg = tuning_dm_melting_graupel * dmmg
+      zmg  = zmg * tuning_dm_melting_graupel**3
     endif
     do i = 0,12
       call coef_a(graupel_coefs(i,0:3), ratg, ag(i))
@@ -1688,9 +1909,14 @@ end function lin_interp
       denpg = density_graupel
     endif
     if (present(ng)) then
-      call dm_z_2moment(density_air, qpg, denpg, ntpg, dmpg, zpg, dmmax=dmmax(6))
+      call dm_z_2moment(density_air, qpg, denpg, ntpg, dmpg, zpg, dmmax=dmmax(6), dm_min=0.3d0)
     else
-      call dm_z_wsm6('graupel', density_air, temp_air, qpg, denpg, dmpg, zpg, dmmax=dmmax(6))
+      call dm_z_wsm6('graupel', density_air, temp_air, qpg, denpg, dmpg, zpg, dmmax=dmmax(6), dm_min=0.3d0)
+    endif
+    ! Apply pure graupel Dm tuning coefficient (default 1.0 = no change)
+    if (tuning_dm_pure_graupel /= 1.0d0) then
+      dmpg = tuning_dm_pure_graupel * dmpg
+      zpg  = zpg * tuning_dm_pure_graupel**3
     endif
     call dualpol_op_icephase(zpg, wpg, denpg, dmpg, graupel_a, zhpg, zdrpg, kdppg, phvpg)
     
@@ -1698,16 +1924,39 @@ end function lin_interp
     if (present(nh) .and. present(qh)) then
       ! 6. Melting hail
       call watercontent(density_air, qmh, wmh)
-      call weticephase_density('hail', rath, denmh)
-      if (present(nh)) then
-        call dm_z_2moment(density_air, qmh, denmh, ntmh, dmmh, zmh, dmmax=dmmax(4))
+      if (treat_hail_as_graupel) then
+        denmh = density_graupel
+        call weticephase_density('graupel', rath, denmh)
       else
-        call dm_z_wsm6('hail', density_air, temp_air, qmh, denmh, dmmh, zmh, dmmax=dmmax(4))
+        denmh = density_hail
+        call weticephase_density('hail', rath, denmh)
+      endif
+      if (present(nh)) then
+        call dm_z_2moment(density_air, qmh, denmh, ntmh, dmmh, zmh, dmmax=dmmax(4), dm_min=0.3d0)
+      else
+        if (treat_hail_as_graupel) then
+          call dm_z_wsm6('graupel', density_air, temp_air, qmh, denmh, dmmh, zmh, dmmax=dmmax(4), dm_min=0.3d0)
+        else
+          call dm_z_wsm6('hail', density_air, temp_air, qmh, denmh, dmmh, zmh, dmmax=dmmax(4), dm_min=0.3d0)
+        endif
+      endif
+      ! Apply melting hail Dm tuning coefficient (default 1.0 = no change)
+      if (tuning_dm_melting_hail /= 1.0d0) then
+        dmmh = tuning_dm_melting_hail * dmmh
+        zmh  = zmh * tuning_dm_melting_hail**3
       endif
       do i = 0,12
-        call coef_a(hail_coefs(i,0:3), rath, ah(i))
+        if (treat_hail_as_graupel) then
+          call coef_a(graupel_coefs(i,0:3), rath, ah(i))
+        else
+          call coef_a(hail_coefs(i,0:3), rath, ah(i))
+        endif
       end do
-      call dualpol_op_icephase(zmh, wmh, denmh, dmmh, ah(0:12), zhmh, zdrmh, kdpmh, phvmh, iband=iband, ptype='mh')
+      if (treat_hail_as_graupel) then
+        call dualpol_op_icephase(zmh, wmh, denmh, dmmh, ah(0:12), zhmh, zdrmh, kdpmh, phvmh, iband=iband)
+      else
+        call dualpol_op_icephase(zmh, wmh, denmh, dmmh, ah(0:12), zhmh, zdrmh, kdpmh, phvmh, iband=iband, ptype='mh')
+      endif
       
       ! 7. Pure hail
       call watercontent(density_air, qph, wph)
@@ -1716,18 +1965,34 @@ end function lin_interp
           denph = density_air * qph / vh * 1.0E-6
           denph = min(max(denph, 0.7_8), 1.0_8)
         else
-          denph = density_hail
+          if (treat_hail_as_graupel) then; denph = density_graupel; else; denph = density_hail; endif
         endif
       else
-        denph = density_hail
+        if (treat_hail_as_graupel) then; denph = density_graupel; else; denph = density_hail; endif
       endif
       if (present(nh)) then
-        call dm_z_2moment(density_air, qph, denph, ntph, dmph, zph, dmmax=dmmax(7))
+        call dm_z_2moment(density_air, qph, denph, ntph, dmph, zph, dmmax=dmmax(7), dm_min=0.3d0)
       else
-        call dm_z_wsm6('hail', density_air, temp_air, qph, denph, dmph, zph, dmmax=dmmax(7))
+        if (treat_hail_as_graupel) then
+          call dm_z_wsm6('graupel', density_air, temp_air, qph, denph, dmph, zph, dmmax=dmmax(7), dm_min=0.3d0)
+        else
+          call dm_z_wsm6('hail', density_air, temp_air, qph, denph, dmph, zph, dmmax=dmmax(7), dm_min=0.3d0)
+        endif
       endif
-      call dualpol_op_icephase(zph, wph, denph, dmph, hail_a, zhph, zdrph, kdpph, phvph, &
-                               iband=iband, ptype='ph')
+      ! Apply pure hail Dm tuning coefficient (default 1.0 = no change)
+      if (tuning_dm_pure_hail /= 1.0d0) then
+        dmph = tuning_dm_pure_hail * dmph
+        zph  = zph * tuning_dm_pure_hail**3  ! z ∝ dm^3
+      endif
+      if (treat_hail_as_graupel) then
+        do i = 0,12
+          call coef_a(graupel_coefs(i,0:3), 0.0d0, ah(i))
+        end do
+        call dualpol_op_icephase(zph, wph, denph, dmph, ah(0:12), zhph, zdrph, kdpph, phvph, iband=iband)
+      else
+        call dualpol_op_icephase(zph, wph, denph, dmph, hail_a, zhph, zdrph, kdpph, phvph, &
+                                 iband=iband, ptype='ph')
+      endif
       
       ! Prepare dm array: [pr, ms, mg, mh, ps, pg, ph]
       dm(1) = dmpr

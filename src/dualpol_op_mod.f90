@@ -45,11 +45,20 @@ module dualpol_op_mod
   public :: snow_ratio_low, snow_ratio_high
   public :: graupel_ratio_low, graupel_ratio_high
   public :: hail_ratio_low, hail_ratio_high
-  public :: enable_melting_water_limit, melting_water_fraction
+  public :: melting_water_fraction
   public :: dmmax_rain
   public :: dmmax_pure_snow, dmmax_melting_snow
   public :: dmmax_pure_graupel, dmmax_melting_graupel
   public :: dmmax_pure_hail, dmmax_melting_hail
+  public :: treat_hail_as_graupel
+  public :: enable_dm_melting_limit, dm_melting_transition_width
+  public :: skip_small_qx
+  public :: enable_dm_regularization  ! Dm regularization for small ntx/qx
+  public :: tuning_dm_rain
+  public :: tuning_dm_melting_snow, tuning_dm_melting_graupel, tuning_dm_melting_hail
+  public :: tuning_dm_pure_snow, tuning_dm_pure_graupel, tuning_dm_pure_hail
+  public :: melting_rain_exponent
+  public :: tuning_melt_frac_snow, tuning_melt_frac_graupel, tuning_melt_frac_hail
 
 contains
 

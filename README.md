@@ -208,7 +208,7 @@ Unified interface providing:
 **zhang21_core_mod.f90** - Polynomial-based operator:
 - `zhang21_init_coefs()`: Load polynomial coefficients (S-band/C-band)
 - `zhang21_compute_point()`: Compute using polynomial functions of Dm and fx
-- `melting_scheme_zhang24()`: Melting layer treatment
+- `melting_scheme_liu24()`: Melting layer treatment
 - `dualpol_op_rain/icephase/total()`: Individual hydrometeor calculations
 
 **zhang21_tlad_mod.f90** - Tangent-linear and adjoint for DA applications
@@ -346,6 +346,9 @@ which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
    Liu, et al., 2024: A New Melting Model and Its Implementation in Parameterized Forward Operators for Polarimetric Radar Data Simulation With Double Moment Microphysics Schemes. *JGR Atmospheres*, **129**.
 
 3. **TCWA2 Operator**:  
+   Tsai, T.-C., J.-P. Chen, Z. Liu, S.-Y. Jiang, R. Kong, Y.-J. Wu, J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2025: Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its Integration with a Dual-Polarization Radar Operator for Forecasting Applications. *J. Adv. Model. Earth Syst.*, submitted.
+
+   Related references:
    - Chen, J.-P., and D. Lamb, 1994: The theoretical basis for the parameterization of ice crystal habits: Growth by vapor deposition. *J. Atmos. Sci.*, **51**, 1206–1221.
    - Cheng, C.-T., W.-C. Wang, and J.-P. Chen, 2010: Simulation of the effects of increasing cloud condensation nuclei on mixed-phase clouds and precipitation of a front system. *Atmos. Res.*, **96**, 461-476.
    - Chen, J.-P., I-C. Tsai and Y.-C. Lin, 2013: A statistical-numerical aerosol parameterization scheme. *Atmos. Chem. Phys.*, **13**, 10483–10504.
