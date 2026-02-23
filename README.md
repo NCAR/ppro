@@ -304,11 +304,16 @@ call ppro_compute_point(iband, 'TCWA2', density_air, temp_air, &
 
 ## Authors
 
+**Core Development:**
+- **Rong Kong** (NCAR/MMM) - Library architecture, modularization, multi-operator framework, testing and maintenance
+
+**Operator Implementation:**
 - **Zhiquan (Jake) Liu** (NCAR/MMM) - Zhang21 operator implementation
-- **Tzu-Chin Tsai** - TCWA2 operator implementation
-- **Hejun Xie** - Integration into JEDI-UFO framework, TL/AD development (not testing yet)
-- **Tao Sun** - Adding hail categories and extended microphysics support
-- **Rong Kong** (NCAR/MMM) - Bug fixes, operator tuning and testing, modularization and multi-operator architecture
+- **Tzu-Chin Tsai** (CWA) - TCWA2 operator implementation
+
+**Extensions and Integration:**
+- **Hejun Xie** - JEDI-UFO integration
+- **Tao Sun** - Hail categories and extended microphysics support
 
 ## License
 
@@ -359,5 +364,6 @@ For questions, issues, or contributions:
 This work was developed at the National Center for Atmospheric Research (NCAR), Mesoscale and Microscale Meteorology Laboratory (MMM).
 
 PPRO is designed as a general-purpose, standalone dual-polarization radar operator library. While it is compatible with data assimilation frameworks such as JEDI, it can be used independently in any numerical weather prediction system or forward operator application.
+
 
 
