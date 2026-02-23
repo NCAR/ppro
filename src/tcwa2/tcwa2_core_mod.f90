@@ -3,12 +3,17 @@
 ! TCWA2 polarimetric radar operator
 ! 
 ! This module contains the TCWA2-specific dual-polarization radar forward
-! operator subroutines. These use analytical formulations based on gamma
-! distribution parameters rather than lookup tables.
+! operator subroutines. These use empirically-fitted polynomial formulations
+! based on gamma distribution PSD parameters (λ, α), rather than lookup tables.
+! The polynomials were derived from T-matrix scattering calculations.
 !
-! Reference: Tsai et al. TCWA2 microphysics scheme
+! Reference: Tsai, T.-C., J.-P. Chen, Z. Liu, S.-Y. Jiang, R. Kong, Y.-J. Wu, 
+!            J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2025:
+!            Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its 
+!            Integration with a Dual-Polarization Radar Operator for Forecasting 
+!            Applications. J. Adv. Model. Earth Syst., submitted.
 ! 
-! Author: Tzu-Chin Tsai (CWB, original implementation)
+! Author: Tzu-Chin Tsai (CWA, original implementation)
 ! Integrated into PPRO library: Rong Kong (NCAR/MMM), 2025
 !--------------------------------------
   implicit none
