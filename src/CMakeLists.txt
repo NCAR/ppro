@@ -30,12 +30,12 @@ add_library(${PROJECT_NAME}_interface OBJECT dualpol_op_mod.f90)
 set_target_properties(${PROJECT_NAME}_interface PROPERTIES
     Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/${MODULE_DIR})
 target_include_directories(${PROJECT_NAME}_interface PRIVATE ${CMAKE_BINARY_DIR}/${MODULE_DIR})
-add_dependencies(${PROJECT_NAME}_interface ${PROJECT_NAME}_tcwa2 ${PROJECT_NAME}_zhang21_core)
+add_dependencies(${PROJECT_NAME}_interface ${PROJECT_NAME}_tcwa2 ${PROJECT_NAME}_zhang21_forward)
 
 # Step 4: Combine into final library
 add_library(${PROJECT_NAME} ${LIBRARY_TYPE} 
     $<TARGET_OBJECTS:${PROJECT_NAME}_tcwa2>
-    $<TARGET_OBJECTS:${PROJECT_NAME}_zhang21_core>
+    $<TARGET_OBJECTS:${PROJECT_NAME}_zhang21_forward>
     $<TARGET_OBJECTS:${PROJECT_NAME}_zhang21_tlad>
     $<TARGET_OBJECTS:${PROJECT_NAME}_interface>
 )

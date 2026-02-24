@@ -1,14 +1,18 @@
-﻿module tcwa2_core_mod
+module tcwa2_forward_mod
 !--------------------------
 ! TCWA2 polarimetric radar operator
 ! 
 ! This module contains the TCWA2-specific dual-polarization radar forward
-! operator subroutines. These use empirically-fitted polynomial formulations
-! based on gamma distribution PSD parameters (λ, α), rather than lookup tables.
-! The polynomials were derived from T-matrix scattering calculations.
+! operator subroutines. These assume a gamma PSD and provide empirically fitted
+! analytic parameterizations as functions of gamma-PSD parameters (λ, α)
+! (or equivalently bulk moments qx, Ntx with derived size metrics such as Dx).
+! The parameterizations are derived by fitting results from offline
+! particle-size-bin scattering calculations integrated over the PSD under the
+! Rayleigh approximation. Coefficients are embedded in the source (no external
+! lookup/coeff files required at runtime).
 !
 ! Reference: Tsai, T.-C., J.-P. Chen, Z. Liu, S.-Y. Jiang, R. Kong, Y.-J. Wu, 
-!            J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2025:
+!            J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2026:
 !            Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its 
 !            Integration with a Dual-Polarization Radar Operator for Forecasting 
 !            Applications. J. Adv. Model. Earth Syst., submitted.
@@ -659,5 +663,5 @@ contains
 !  (C) Copr. 1986-92 Numerical Recipes Software 2.02
 !======================================================================
 
-end module tcwa2_core_mod
+end module tcwa2_forward_mod
 

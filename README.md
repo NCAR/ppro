@@ -8,14 +8,33 @@ This library can be used independently or integrated into data assimilation fram
 
 ## Scientific Background
 
-The P-PRO operator is based on the parameterized forward operators for polarimetric radar data described in:
+The P-PRO operator is based on the parameterized forward operators for polarimetric radar data:
 
-> Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators for simulation and assimilation of polarimetric radar data with numerical weather predictions. *Adv. Atmos. Sci.*, **38**(5), 737−754.
+**Zhang21 Method** (Zhang et al. 2021): Assumes **exponential** particle size distribution (PSD). Polynomial functions of mean diameter (Dm) and mass content of hydrometeors (Wx), with coefficients fitted from extensive **T-matrix** scattering simulations. At runtime, only polynomial evaluation is performed—**no table lookup**.
 
-**Zhang21 Method**: Polynomial functions of mean diameter (Dm) and water fraction (fx), with coefficients fitted from extensive T-matrix scattering simulations. At runtime, only polynomial evaluation is performed—**no table lookup**.
+**TCWA2 Method** (Tsai et al. 2026): Assumes a **gamma** particle size distribution (PSD). Provides empirically fitted analytic parameterizations of bulk dual-pol radar variables as functions of gamma-PSD parameters (λ, α) (or equivalently bulk moments qx and Ntx with derived size metrics such as Dx). Environmental state (T, ρa) and model-provided melting fractions (smlf/gmlf) are used as needed for scaling and mixed-phase treatment. The parameterizations are derived by fitting results from offline particle-size-bin scattering calculations integrated over the PSD under the **Rayleigh** approximation; coefficients are embedded in the source (**no external lookup/coeff files required at runtime**).
 
-**TCWA2 Method**: Empirically-fitted polynomial formulations based on gamma distribution PSD parameters (λ, α). The polynomials were derived from T-matrix scattering calculations—**no coefficient files needed at runtime**.
+## Operator Comparison: Zhang21 vs TCWA2
 
+| Feature               | Zhang21                                            | TCWA2                                                    |
+|-----------------------|----------------------------------------------------|----------------------------------------------------------|
+| **PSD assumption**    | Exponential                                        | Gamma                                                    |
+| **Scattering method** | T-matrix                                           | Rayleigh approximation                                   |
+| **Basis**             | Polynomials of Dm and Wx (mass content)            | Fitted analytic functions of gamma PSD parameters (λ, α) |
+| **Microphysics**      | Thompson, WSM6, NSSL, TCWA2                        | TCWA2 (Taiwan CWA)                                       |
+| **Melting treatment** | Melting model (Liu et al. 2024)                    | Melted fraction fields                                   |
+| **Required inputs**   | qr, qs, qg [+ qh, nr, ns, ng, nh, vg, vh for NSSL] | qr, qs, qg, qc, qi, nr, ns, ng, ni, smlf, gmlf           |
+| **Ice crystal**       | Not used                                           | Explicit (qi, ni)                                        |
+| **Cloud water**       | Not used                                           | Explicit (qc)                                            |
+
+**Key Algorithmic Differences**:
+- **Zhang21**: Exponential PSD + T-matrix scattering → Dm, Wx → Polynomial evaluation → Zh, ZDR, KDP, ρhv
+- **TCWA2**: Gamma PSD + Rayleigh scattering → λ, α, Dx, smlf/gmlf → Fitted analytic functions → Zh, ZDR, KDP
+
+**Recommendation**: 
+- Use **Zhang21** for standard WRF microphysics schemes (Thompson, WSM6, NSSL, TCWA2)
+- Use **TCWA2** for Taiwan CWA microphysics with explicit melting information
+- 
 The operator computes dual-polarization radar variables including:
 - **Zhh**: Horizontal reflectivity (dBZ)
 - **ZDR**: Differential reflectivity (dB)
@@ -25,20 +44,20 @@ The operator computes dual-polarization radar variables including:
 ## Features
 
 - **Multiple Polarimetric Operators:**
-  - **Zhang21**: Polynomial functions fitted from T-matrix simulations (Zhang et al. 2021)
-  - **TCWA2**: Empirically-fitted polynomial formulations based on gamma DSD (Tsai et al. 2025)
+  - **Zhang21**: Exponential PSD, T-matrix scattering, polynomial functions (Zhang et al. 2021)
+  - **TCWA2**: Gamma PSD, Rayleigh scattering, fitted analytic formulations (Tsai et al. 2026)
   
 - **Microphysics Schemes:**
   - **Thompson**: Double-moment for rain (with Zhang21 operator)
   - **WSM6**: Single-moment (with Zhang21 operator)
   - **NSSL**: Double-moment with hail (with Zhang21 operator)
-  - **TCWA2**: Taiwan CWA scheme with fitted polynomials (with TCWA2 operator)
+  - **TCWA2**: Taiwan CWA double-moment miscrophysics scheme (Tsai et al. 2026, work with both TCWA2 and Zhang21 operator)
   
 - **Radar Frequencies:**
   - S-band (11 cm wavelength) and C-band (5.3 cm wavelength) support
   
 - **Advanced Physics:**
-  - Melting layer treatment (Zhang21: QC-based; TCWA2: melted fraction based)
+  - Melting layer treatment (Zhang21: melting model, Liu et al. 2024; TCWA2: melted fraction based)
   - Pure and melting hydrometeor categories (rain, snow, graupel, hail, ice)
   - Gamma PSD (Particle Size Distribution) parameterization (TCWA2)
 
@@ -60,11 +79,11 @@ ppro/
 │   ├── CMakeLists.txt
 │   ├── dualpol_op_mod.f90       # Main interface (operator dispatch)
 │   ├── zhang21/                 # Zhang21 operator
-│   │   ├── zhang21_core_mod.f90   # Zhang21 core physics
+│   │   ├── zhang21_forward_mod.f90 # Zhang21 forward operator
 │   │   ├── zhang21_tlad_mod.f90   # Zhang21 TL/AD
 │   │   └── CMakeLists.txt
 │   └── tcwa2/                   # TCWA2 operator
-│       ├── tcwa2_core_mod.f90     # TCWA2 core physics
+│       ├── tcwa2_forward_mod.f90   # TCWA2 forward operator
 │       └── CMakeLists.txt
 ├── examples/              # Standalone example programs
 │   ├── CMakeLists.txt
@@ -138,19 +157,19 @@ See `examples/README.md` for more details on examples and how to write your own 
 
 The library can be used independently in any Fortran-based numerical weather prediction model:
 
-**Using Zhang21 operator (polynomial-based from T-matrix):**
+**Using Zhang21 operator (exponential PSD + T-matrix):**
 ```fortran
 use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
 
 ! Initialize with Zhang21 operator (reads polynomial coefficient files)
 call ppro_init_coefs(operator_name='Zhang21')
 
-! Compute dual-pol variables using polynomial functions of Dm and fx
+! Compute dual-pol variables using polynomial functions of Dm and Wx
 call ppro_compute_point(iband, 'THOMPSON', density_air, temp_air, &
                         qr, qs, qg, zh, zdr, kdp, phv, nr=nr)
 ```
 
-**Using TCWA2 operator (fitted polynomials based on gamma PSD, no coefficient files needed):**
+**Using TCWA2 operator (gamma PSD + Rayleigh scattering):**
 ```fortran
 use dualpol_op_mod, only: ppro_init_coefs, ppro_compute_point
 
@@ -187,9 +206,7 @@ target_link_libraries(ufo PUBLIC ppro)
 
 ## Coefficient Files
 
-**Zhang21 operator** requires coefficient files for S-band and C-band radars. These files should be placed in the `fix/` directory. See `fix/README.txt` for details on the required files.
-
-**TCWA2 operator** does not require coefficient files as it uses built-in fitted polynomial formulations.
+The **Zhang21 operator** requires coefficient files for S-band and C-band radars, which should be placed in the `fix/` directory. See `fix/README.txt` for details. The **TCWA2 operator** has all coefficients hard-coded in the source and requires no external files.
 
 **Note**: Coefficient files for Zhang21 must be obtained separately and are not included in this repository.
 
@@ -205,9 +222,9 @@ Unified interface providing:
 
 ### Zhang21 Operator (`zhang21/`)
 
-**zhang21_core_mod.f90** - Polynomial-based operator:
+**zhang21_forward_mod.f90** - Exponential PSD + T-matrix polynomial operator:
 - `zhang21_init_coefs()`: Load polynomial coefficients (S-band/C-band)
-- `zhang21_compute_point()`: Compute using polynomial functions of Dm and fx
+- `zhang21_compute_point()`: Compute using polynomial functions of Dm and Wx
 - `melting_scheme_zhang24()`: Melting layer treatment
 - `dualpol_op_rain/icephase/total()`: Individual hydrometeor calculations
 
@@ -215,9 +232,9 @@ Unified interface providing:
 
 ### TCWA2 Operator (`tcwa2/`)
 
-**tcwa2_core_mod.f90** - Empirically-fitted polynomial formulations based on gamma PSD:
-- `dualpol_op_rain_tcwa2()`: Rain using fitted polynomial formulas
-- `dualpol_op_ice_tcwa2()`: Ice using fitted polynomial formulas
+**tcwa2_forward_mod.f90** - Gamma PSD + Rayleigh scattering fitted formulations:
+- `dualpol_op_rain_tcwa2()`: Rain using fitted analytic formulas
+- `dualpol_op_ice_tcwa2()`: Ice using fitted analytic formulas
 - `dualpol_op_snow_tcwa2()`: Snow with melting treatment
 - `dualpol_op_graup_tcwa2()`: Graupel with melting treatment
 - `GAMLN()`: Gamma function computation
@@ -226,9 +243,9 @@ Unified interface providing:
 
 ### Zhang21 Operator with Multiple Microphysics Schemes
 
-**Method**: Polynomial functions of Dm (mean diameter) and fx (water fraction) fitted from T-matrix simulations
+**Method**: Exponential PSD; polynomial functions of Dm (mean diameter) and Wx (mass content) fitted from T-matrix scattering simulations
 
-**Compatible Schemes**: WSM6, Thompson, NSSL
+**Compatible Schemes**: WSM6, Thompson, NSSL, TCWA2
 
 **WSM6 (Single-moment, 7 variables):**
 ```fortran
@@ -260,7 +277,7 @@ call ppro_compute_point(iband, 'NSSL', density_air, temp_air, &
 
 ### TCWA2 Operator
 
-**Method**: Empirically-fitted polynomial formulations based on gamma DSD
+**Method**: Gamma PSD; fitted analytic parameterizations derived from bin-based scattering under the Rayleigh approximation
 
 **Compatible Scheme**: TCWA2 only
 
@@ -281,14 +298,16 @@ call ppro_compute_point(iband, 'TCWA2', density_air, temp_air, &
 
 **Key Differences**:
 - **Zhang21**: 
+  - PSD: Exponential; Scattering: T-matrix
   - Initialization: Read polynomial coefficients from files (one-time)
   - Runtime: Polynomial evaluation only—**no table lookup**
-  - Melting: Temperature-based QC applied internally
-  - Schemes: WSM6, Thompson, NSSL
+  - Melting: Melting model (Liu et al. 2024)
+  - Schemes: WSM6, Thompson, NSSL, TCWA2
   
 - **TCWA2**: 
-  - Initialization: No coefficient files needed
-  - Runtime: Empirically-fitted polynomial evaluation (based on gamma PSD parameters)
+  - PSD: Gamma; Scattering: Rayleigh approximation
+  - Initialization: Coefficients hard-coded in source
+  - Runtime: Fitted analytic evaluation (as functions of gamma-PSD parameters)
   - Melting: Explicit melted fraction fields (smlf, gmlf) from model
   - Schemes: TCWA2 only
 
@@ -298,7 +317,7 @@ call ppro_compute_point(iband, 'TCWA2', density_air, temp_air, &
   - Extracted from JEDI-UFO as independent library
   - Multi-operator architecture (Zhang21 + TCWA2)
   - Modular directory structure (zhang21/ and tcwa2/ subdirectories)
-  - Support for Thompson, WSM6, and NSSL microphysics
+  - Support for Thompson, WSM6, NSSL, and TCWA2 microphysics
   - S-band and C-band radar support
   - Standalone examples and comprehensive documentation
 
@@ -320,27 +339,6 @@ call ppro_compute_point(iband, 'TCWA2', density_air, temp_air, &
 This software is licensed under the terms of the Apache Licence Version 2.0
 which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
-## Operator Comparison: Zhang21 vs TCWA2
-
-| Feature | Zhang21 | TCWA2 |
-|---------|---------|-------|
-| **Method** | Polynomial functions fitted from T-matrix simulations | Empirically-fitted polynomial formulations |
-| **Basis** | Polynomials of Dm and fx (water fraction) | Fitted polynomials of gamma PSD parameters (λ, α) |
-| **Coefficient files** | Required (fix/*.txt) | Not required |
-| **Microphysics** | Thompson, WSM6, NSSL | TCWA2 (Taiwan CWA) |
-| **Melting treatment** | Temperature-based QC | Melted fraction fields |
-| **Required inputs** | qr, qs, qg [+ qh, nr, ns, ng, nh, vg, vh for NSSL] | qr, qs, qg, qc, qi, nr, ns, ng, ni, smlf, gmlf |
-| **Ice crystal** | Not used | Explicit (qi, ni) |
-| **Cloud water** | Not used | Explicit (qc) |
-| **Validation** | Extensive | CWA operational |
-
-**Key Algorithmic Differences**:
-- **Zhang21**: Dm and fx → Polynomial evaluation → Zh, ZDR, KDP, ρhv
-- **TCWA2**: Gamma PSD (λ, α) → Fitted polynomial evaluation → Zh, ZDR, KDP
-
-**Recommendation**: 
-- Use **Zhang21** for standard WRF microphysics schemes (Thompson, WSM6, NSSL)
-- Use **TCWA2** for Taiwan CWA microphysics with explicit melting information
 
 ## References
 
@@ -350,8 +348,11 @@ which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 2. **Zhang21 Melting Scheme**:  
    Liu, et al., 2024: A New Melting Model and Its Implementation in Parameterized Forward Operators for Polarimetric Radar Data Simulation With Double Moment Microphysics Schemes. *JGR Atmospheres*, **129**.
 
-3. **TCWA2 Operator**:  
-   Tsai, T.-C., J.-P. Chen, Z. Liu, S.-Y. Jiang, R. Kong, Y.-J. Wu, J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2025: Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its Integration with a Dual-Polarization Radar Operator for Forecasting Applications. *J. Adv. Model. Earth Syst.*, submitted.
+3. **Application of Zhang21 Operator in MPAS-JEDI**:  
+   Kong ey al., 2026: Assimilation of Radar Radial Velocity and Polarimetric Observations Using LETKF within MPAS-JEDI: A Case Study of an Afternoon Thunderstorm in Taiwan
+
+4. **TCWA2 Operator**:  
+   Tsai, T.-C., J.-P. Chen, Z. Liu, S.-Y. Jiang, R. Kong, Y.-J. Wu, J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2026: Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its Integration with a Dual-Polarization Radar Operator for Forecasting Applications. *J. Adv. Model. Earth Syst.*, submitted.
 
 ## Contact
 
@@ -364,6 +365,8 @@ For questions, issues, or contributions:
 This work was developed at the National Center for Atmospheric Research (NCAR), Mesoscale and Microscale Meteorology Laboratory (MMM).
 
 PPRO is designed as a general-purpose, standalone dual-polarization radar operator library. While it is compatible with data assimilation frameworks such as JEDI, it can be used independently in any numerical weather prediction system or forward operator application.
+
+
 
 
 

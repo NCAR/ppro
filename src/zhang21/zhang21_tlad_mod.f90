@@ -10,7 +10,7 @@ module zhang21_tlad_mod
 ! Initial version: May 2024
 !--------------------------------------
 
-  use zhang21_core_mod, only: density_rain, density_snow, density_graupel, density_hail, &
+  use zhang21_forward_mod, only: density_rain, density_snow, density_graupel, density_hail, &
                               ratio_rain, ratio_snow, ratio_graupel, ratio_hail, &
                               sband_snow_a, sband_graupel_a, sband_hail_a, &
                               cband_snow_a, cband_graupel_a, cband_hail_a, &

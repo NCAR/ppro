@@ -1,4 +1,4 @@
-module zhang21_core_mod
+module zhang21_forward_mod
 !--------------------------
 ! Zhang21 Polarimetric Radar Operator
 !
@@ -2039,4 +2039,4 @@ end function lin_interp
 
   ! ------------------------------------------------------------------------------
 
-end module zhang21_core_mod
+end module zhang21_forward_mod

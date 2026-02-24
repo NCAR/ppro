@@ -199,10 +199,10 @@ program standalone_test
   call ppro_init_coefs(operator_name='TCWA2')
   
   write(*,*) "----------------------------------------------"
-  write(*,*) "Test Case: TCWA2 Fitted Polynomial Formulation"
+  write(*,*) "Test Case: TCWA2 Fitted Analytic Formulation"
   write(*,*) "----------------------------------------------"
-  write(*,*) "Note: TCWA2 uses fitted polynomials based on gamma PSD"
-  write(*,*) "      formulations, no lookup tables required."
+  write(*,*) "Note: TCWA2 assumes gamma PSD; parameterizations derived from"
+  write(*,*) "      bin-based scattering under the Rayleigh approximation."
   write(*,*)
   write(*,*) "(TCWA2 requires additional parameters: qi, ni, qc, smlf, gmlf)"
   write(*,*) "(Full TCWA2 testing requires UFO interface)"

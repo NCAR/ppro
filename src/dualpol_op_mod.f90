@@ -5,13 +5,13 @@ module dualpol_op_mod
 ! This module provides the unified interface for PPRO library, supporting
 ! multiple polarimetric radar operators:
 !   - Zhang21: Zhang et al. 2021 (lookup table based)
-!   - TCWA2: Tsai et al. (empirically-fitted polynomials based on gamma PSD)
+!   - TCWA2: Tsai et al. (gamma PSD, fitted from PSD-integrated Rayleigh scattering)
 !
 ! Authors:
 !   Rong Kong (NCAR/MMM) - Interface design and multi-operator support, 2025
 !--------------------------------------
-  use zhang21_core_mod
-  use tcwa2_core_mod
+  use zhang21_forward_mod
+  use tcwa2_forward_mod
   implicit none
 
   ! Operator type enumeration
@@ -89,7 +89,7 @@ contains
     else if (current_operator == OPERATOR_TCWA2) then
       write(*,'(A)') '=========================================='
       write(*,'(A)') 'PPRO: Using TCWA2 operator'
-      write(*,'(A)') 'No coefficient files needed (built-in fitted polynomials)'
+      write(*,'(A)') 'No coefficient files needed (built-in fitted analytic formulations)'
       write(*,'(A)') '=========================================='
     endif
     
@@ -133,7 +133,7 @@ contains
                                  coeff_melt=coeff_melt, temperature=temperature, iobs=iobs)
       
     else if (current_operator == OPERATOR_TCWA2) then
-      ! TCWA2: Use empirically-fitted polynomial formulation
+      ! TCWA2: Use empirically-fitted analytic formulation
       if (.not. (present(qi) .and. present(ni) .and. present(qc) .and. &
                  present(smlf) .and. present(gmlf) .and. present(nr) .and. &
                  present(ns) .and. present(ng))) then
@@ -162,7 +162,7 @@ contains
         write(*,*) 'PPRO: Selected Zhang21 operator (lookup table based)'
       case ('TCWA2', 'tcwa2', 'Tcwa2')
         current_operator = OPERATOR_TCWA2
-        write(*,*) 'PPRO: Selected TCWA2 operator (fitted polynomial formulation)'
+        write(*,*) 'PPRO: Selected TCWA2 operator (fitted analytic formulation)'
       case default
         write(*,*) 'WARNING: Unknown operator "', trim(operator_name), '". Using Zhang21.'
         current_operator = OPERATOR_ZHANG21
