@@ -349,7 +349,7 @@ which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
    Liu, et al., 2024: A New Melting Model and Its Implementation in Parameterized Forward Operators for Polarimetric Radar Data Simulation With Double Moment Microphysics Schemes. *JGR Atmospheres*, **129**.
 
 3. **Application of Zhang21 Operator in MPAS-JEDI**:  
-   Kong ey al., 2026: Assimilation of Radar Radial Velocity and Polarimetric Observations Using LETKF within MPAS-JEDI: A Case Study of an Afternoon Thunderstorm in Taiwan
+   Kong et al., 2026: Assimilation of Radar Radial Velocity and Polarimetric Observations Using LETKF within MPAS-JEDI: A Case Study of an Afternoon Thunderstorm in Taiwan. *Mon. Wea. Rev.*, submitted.
 
 4. **TCWA2 Operator**:  
    Tsai, T.-C., J.-P. Chen, Z. Liu, S.-Y. Jiang, R. Kong, Y.-J. Wu, J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2026: Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its Integration with a Dual-Polarization Radar Operator for Forecasting Applications. *J. Adv. Model. Earth Syst.*, submitted.
