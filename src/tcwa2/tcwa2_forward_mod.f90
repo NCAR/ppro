@@ -15,7 +15,7 @@ module tcwa2_forward_mod
 !            J. Ban, L.-F. Hsiao, Y.-S. Tang, P.-L. Chang, and J.-S. Hong, 2026:
 !            Development of the TCWA2 Bulk Cloud Microphysics Scheme and Its 
 !            Integration with a Dual-Polarization Radar Operator for Forecasting 
-!            Applications. J. Adv. Model. Earth Syst., submitted.
+!            Applications. to be submitted.
 ! 
 ! Author: Tzu-Chin Tsai (CWA, original implementation)
 ! Integrated into PPRO library: Rong Kong (NCAR/MMM), 2025
@@ -35,24 +35,34 @@ contains
 
 !---------------------------------------TCWA2------------------------------------------
 !--------------------------------------------------------------------------------------
-  subroutine dualpol_op_rain_tcwa2(iband,rho,qr0,nr0,zh,zv,kdp)
+      subroutine dualpol_op_rain_tcwa2(iband,rho,qc0,qr0,nr0,zh,zv,kdp)
 !--------------------------------------------------------------------------------------
-    implicit none
+      implicit none
       integer, intent(in) :: iband       ! radar scan band (wavelength)
       real(kind=8), intent(in)  :: rho   ! air density, kg/m^3
+      real(kind=8), intent(in)  :: qc0   ! mass mixing ratio, g/kg
       real(kind=8), intent(in)  :: qr0   ! mass mixing ratio, g/kg
       real(kind=8), intent(in)  :: nr0   ! number concentration, 1/m^3
       real(kind=8), intent(out) :: zh    ! horizontal reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: zv    ! vertical reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: kdp   ! specific differential phase, degree/km^-1
-      real, parameter :: thrd = 1./3., drmin = 1.E-4, drmax = 6.E-3
-      real :: qr,nr,mvrr,afar,lamr,lamrmin,lamrmax,gr1,gr4,mvdr,llmr,  &
-              llmr2,llmr3,lar2,lar22,lar23,fdbzr,dbzr,fzdrr,zdr,fkdpr, &
-              dbzwl
+      real, parameter :: drmin = 1.E-4, drmax = 6.E-3
+      real :: qc,qr,nr,mvrr,afar,lamr,lamrmin,lamrmax,gr1,gr4,mvdr,    &
+              llmr,llmr2,llmr3,lar2,lar22,lar23,fdbzr,dbzr,fzdrr,zdr,  &
+              fkdpr,dbzwl
+      real(kind=8), parameter :: thrd = 1./3.,         zxmin = 1.e-21
+      real(kind=8), parameter :: afamin = 0.,          afamax = 30.
+      real(kind=8), parameter :: afa1 = -0.35897435,   afa2 = 0.010041278
+      real(kind=8), parameter :: afa3 = 1.9349749E-3,  afa4 = -0.067453607
+      real(kind=8), parameter :: afa5 = -5.5693923E-3, afa6 = 0.06376154
+      real(kind=8), parameter :: afb1 = -6.5100404,    afb2 = 0.039597245
+      real(kind=8), parameter :: afb3 = 2.3169628E-3,  afb4 = -0.45856646
+      real(kind=8), parameter :: afb5 = -0.04537631,   afb6 = 0.25713479
 
-      zh = 1.e-21
-      zv = 1.e-21
+      zh = zxmin
+      zv = zxmin
       kdp = 0.
+      qc = qc0/1.e3      ! g/kg -> kg/kg
       qr = qr0/1.e3      ! g/kg -> kg/kg
       nr = nr0/rho       ! 1/m^3 -> 1/kg
       if (iband.eq.1) then
@@ -62,9 +72,22 @@ contains
       endif
       if (qr.ge.1.e-14.and.nr.ge.1.e-2) then
          mvrr = MIN(drmax/2.,MAX(drmin/2.,(qr/nr/4.18879E3)**thrd))
-         afar = MIN(20.,MAX(1.E-4,(-0.69914266+2.3818105E-3*LOG(nr)+   &
-                1.6103668E-3*LOG(nr)**2.-0.12277336*LOG(mvrr))/(1.-    &
-                2.3054262E-3*LOG(nr)+0.092294568*LOG(mvrr))))
+         if (qc.ge.1.e-14.or.nr.lt.0.5) then
+            afar = MIN(afamax,MAX(afamin,(afa1+afa2*LOG(nr)+afa3*      &
+                   LOG(nr)**2.+afa4*LOG(mvrr))/(1.+afa5*LOG(nr)+afa6*  &
+                   LOG(mvrr))))
+         else
+            afar = MIN(afamax,MAX(afamin,(afb1+afb2*LOG(nr)+afb3*      &
+                   LOG(nr)**2.+afb4*LOG(mvrr))/(1.+afb5*LOG(nr)+afb6*  &
+                   LOG(mvrr))))
+         endif
+         if ((nr*mvrr**6.).ge.1.E-16) then
+            if (nr.ge.3.8e3) then
+               afar = afamax
+            else
+               afar = 0.5*afar
+            endif
+         endif
          gr1     = GAMLN(afar+1.)
          gr4     = GAMLN(afar+4.)
          lamr    = (EXP(gr4-gr1)*nr*523.5987756/qr)**thrd
@@ -89,7 +112,6 @@ contains
                  328.61414*LOG(llmr)**2.-1122.8963*SQRT(llmr)
          zh = nr*10.**((fdbzr-200.)/10.-18.)
          dbzr = 10.*LOG10(1.E18*zh)
-         IF (nr.ge.1.) THEN
          IF (afar.GE.3.) THEN
             fzdrr = EXP(27.639873+3.7680268*lar2-4.3382556*llmr+       &
                     0.36498072*lar22+0.29286255*llmr2-0.58159197*lar2* &
@@ -100,9 +122,6 @@ contains
                     5.8974032E-3*lar22-0.34268382*llmr2+0.10193409*    &
                     lar2*llmr-0.11005788*lar23+0.015622039*llmr3-      &
                     0.038623263*lar2*llmr2+0.10413007*lar22*llmr)/1.E4
-         ENDIF
-         ELSE
-         fzdrr = 0.
          ENDIF
          zv = 10.**(dbzr/10.-18.-fzdrr/10.)
          IF (mvdr.LT.7.E-4) THEN
@@ -130,31 +149,62 @@ contains
       endif
 
       end subroutine dualpol_op_rain_tcwa2
-
 !-------------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------------
-  subroutine dualpol_op_ice_tcwa2(iband,tk,rho,qi0,ni0,zh,zv,kdp)
+      subroutine dualpol_op_ice_tcwa2(iband,tk,rho,qc0,qi0,ni0,zh,zv,kdp)
 !-------------------------------------------------------------------------------------
-    implicit none
+      implicit none
       integer, intent(in) :: iband      ! radar scan band (wavelength)
       real(kind=8), intent(in)  :: tk   ! air temperature, K
       real(kind=8), intent(in)  :: rho  ! air density, kg/m^3
+      real(kind=8), intent(in)  :: qc0  ! mass mixing ratio, g/kg
       real(kind=8), intent(in)  :: qi0  ! mass mixing ratio, g/kg
       real(kind=8), intent(in)  :: ni0  ! number concentration, 1/m^3
       real(kind=8), intent(out) :: zh   ! horizontal reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: zv   ! vertical reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: kdp  ! specific differential phase, degree/km^-1
       integer :: hid
-      real, parameter :: thrd = 1./3., dimin = 6.E-6, dimax = 5.E-3
-      real :: qi,ni,dbzwl,rhoi,i3m,bdi,fdi,kdx,afai,gi1,gi4,lami,zdr,  &
-              lamimin,lamimax,mvdi,ltk,lbdi,adagr,zeta,dbzi,fdbzi,llmi,&
-              llmi2,lai2,lai22,lai23,lroi,lroi2,lroi3,lmdi,lmdi2,lmdi3,&
-              zeta2,zeta3,zhrox,zhzet,zdrox,zdzet,fzdri,fkdpi,kdrox,   &
-              kdzet
+      real, parameter :: dimin = 6.E-6, dimax = 5.E-3
+      real :: qc,qi,ni,dbzwl,rhoi,mvri,afai,gi1,gi4,lami,zdr,lamimin,  &
+              lamimax,mvdi,ltk,lbdi,adagr,zeta,dbzi,fdbzi,llmi,llmi2,  &
+              lai2,lai22,lai23,lroi,lroi2,lroi3,lmdi,lmdi2,lmdi3,zeta2,&
+              zeta3,zhrox,zhzet,zdrox,zdzet,fzdri,fkdpi,kdrox,kdzet,   &
+              i3m,tc,ttr,inhgr
+      real(kind=8), parameter :: thrd = 1./3.,         zxmin = 1.e-21
+      real(kind=8), parameter :: afamin = 0.,          afamax = 30.
+      real(kind=8), parameter :: afa1 = -0.35897435,   afa2 = 0.010041278
+      real(kind=8), parameter :: afa3 = 1.9349749E-3,  afa4 = -0.067453607
+      real(kind=8), parameter :: afa5 = -5.5693923E-3, afa6 = 0.06376154
+      real(kind=8), parameter :: afb1 = -6.5100404,    afb2 = 0.039597245
+      real(kind=8), parameter :: afb3 = 2.3169628E-3,  afb4 = -0.45856646
+      real(kind=8), parameter :: afb5 = -0.04537631,   afb6 = 0.25713479
+      real(kind=8), dimension(0:120) :: itble
+      data itble /1.000000,0.979490,0.959401,0.939723,0.920450,0.899498,&
+                  0.879023,0.857038,0.833681,0.810961,0.783430,0.755092,&
+                  0.703072,0.537032,0.467735,0.524807,0.630957,0.812831,&
+                  1.096478,1.479108,1.905461,2.089296,2.290868,2.398833,&
+                  2.454709,2.426610,2.371374,2.290868,2.137962,1.995262,&
+                  1.862087,1.737801,1.621810,1.513561,1.396368,1.288250,&
+                  1.188502,1.096478,1.000000,0.922571,0.851138,0.785236,&
+                  0.724436,0.668344,0.616595,0.575440,0.537032,0.501187,&
+                  0.467735,0.436516,0.407380,0.380189,0.354813,0.331131,&
+                  0.316228,0.301995,0.291743,0.285102,0.281838,0.278612,&
+                  0.275423,0.278612,0.281838,0.285102,0.291743,0.298538,&
+                  0.309030,0.319890,0.331131,0.346737,0.367282,0.393550,&
+                  0.426580,0.457088,0.489779,0.524807,0.562341,0.609537,&
+                  0.660693,0.716143,0.785236,0.860994,0.954993,1.047129,&
+                  1.148154,1.258925,1.380384,1.496236,1.603245,1.698244,&
+                  1.778279,1.840772,1.883649,1.905461,1.905461,1.883649,&
+                  1.862087,1.840772,1.798871,1.737801,1.698244,1.640590,&
+                  1.584893,1.548817,1.513561,1.475707,1.452112,1.428894,&
+                  1.412538,1.393157,1.377209,1.361445,1.348963,1.336596,&
+                  1.327394,1.318257,1.309182,1.303167,1.294196,1.288250,&
+                  1.279381/
 
-      zh = 1.e-21
-      zv = 1.e-21
+      zh = zxmin
+      zv = zxmin
       kdp = 0.
+      qc = qc0/1.e3      ! g/kg -> kg/kg
       qi = qi0/1.e3      ! g/kg -> kg/kg
       ni = ni0/rho       ! 1/m^3 -> 1/kg
       if (iband.eq.1) then
@@ -164,16 +214,19 @@ contains
       endif
       if (qi.ge.1.e-14.and.ni.ge.1.e-2) then
          rhoi = 900.
-         i3m  = 1.909859317*qi/rhoi
-         bdi  = MIN(MAX((i3m/ni)**thrd*1.E3,dimin*1.E3),dimax*1.E3)
-         fdi  = 7.4015986E-2+7.9866676E-1*bdi-9.4468892E-3*LOG(ni)+    &
-                3.8235092E-1*bdi**2.+2.9811542E-4*LOG(ni)**2.+         &
-                1.9052614E-2*bdi*LOG(ni)
-         kdx  = MAX(0.556,MIN(0.999,(bdi/fdi)**3.))
-         afai = (6.*kdx-3.+SQRT(8.*kdx+1.))/(2.-2.*kdx)
-         afai = MIN(MAX(afai,0.),3.E4)
+         mvri = MIN(dimax/2.,MAX(dimin/2.,(1.90986*qi/ni/rhoi)**thrd))
+         if (qc.ge.1.e-14.or.ni.lt.0.5) then
+            afai = MIN(afamax,MAX(afamin,(afa1+afa2*LOG(ni)+afa3*      &
+                   LOG(ni)**2.+afa4*LOG(mvri))/(1.+afa5*LOG(ni)+afa6*  &
+                   LOG(mvri))))
+         else
+            afai = MIN(afamax,MAX(afamin,(afb1+afb2*LOG(ni)+afb3*      &
+                   LOG(ni)**2.+afb4*LOG(mvri))/(1.+afb5*LOG(ni)+afb6*  &
+                   LOG(mvri))))
+         endif
          gi1  = GAMLN(afai+1.)
          gi4  = GAMLN(afai+4.)
+         i3m  = 1.90986*qi/rhoi
          lami = (EXP(gi4-gi1)*ni/i3m)**thrd
          lamimin = (EXP(gi4-gi1))**thrd/dimax
          lamimax = (EXP(gi4-gi1))**thrd/dimin
@@ -185,12 +238,14 @@ contains
             ni = i3m*EXP(gi1-gi4+3.*LOG(lami))
          ENDIF
          mvdi  = (EXP(gi4-gi1))**thrd/lami
-         IF (mvdi.GT.6.e-6) THEN
-            ltk   = LOG(tk)
+         IF (mvdi.GE.6.e-6) THEN
             lbdi  = LOG(mvdi*1.E6)
-            adagr = MIN(1.6,MAX(0.2,831.26148-299.86635*ltk+23.257362/ &
-                    lbdi+27.074238*ltk**2.+0.004494653/lbdi**2.-       &
-                    4.1838773*ltk/lbdi))
+            ttr   = MIN(1.,MAX(0.01,9.207E-3*lbdi**3.-0.150212*lbdi**2.+&
+                    0.565632*lbdi+0.401116))
+            tc    = tk-273.15
+            hid   = MAX(MIN(NINT(ABS(tc)/0.25),120),0)
+            inhgr = itble(hid)
+            adagr = inhgr**ttr
          ELSE
             adagr = 1.
          ENDIF
@@ -237,7 +292,7 @@ contains
                     zeta-0.01097138*lmdi2+9.8497711*zeta2+0.83287327*  &
                     lmdi*zeta+9.1590015E-4*lmdi3-7.2917335*zeta3-      &
                     2.2235781*lmdi*zeta2-0.053116593*lmdi2*zeta)
-            kdp   = ni*fkdpi*kdrox*kdzet*dbzwl/0.11
+            kdp   = ni*fkdpi*kdrox*kdzet*0.11/dbzwl
             IF (zv.LT.zh) zv = 1.0001*zh
             zdr   = 10.*LOG10(zv/zh)
          ELSEIF ((1.-adagr).GE.1.e-2) THEN
@@ -271,7 +326,7 @@ contains
                     0.0022174675*lmdi2+5.2415098*zeta2-0.40918383*lmdi*&
                     zeta-3.696556E-5*lmdi3+3.5504491*zeta3-1.4353113*  &
                     lmdi*zeta2+0.022796706*lmdi2*zeta)
-            kdp   = ni*fkdpi*kdrox*kdzet*dbzwl/0.11
+            kdp   = ni*fkdpi*kdrox*kdzet*0.11/dbzwl
             IF (zv.GT.zh) zv = 0.9999*zh
             zdr   = 10.*LOG10(zh/zv)
          ELSEIF (ABS(adagr-1.).LT.1.e-2) THEN
@@ -289,13 +344,12 @@ contains
       endif
 
   end subroutine dualpol_op_ice_tcwa2
-
 !---------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------------
-  subroutine dualpol_op_snow_tcwa2(iband,tk,rho,qc0,qr0,qs0,ns0,   &
-                                   smlf,zh,zv,kdp)
+      subroutine dualpol_op_snow_tcwa2(iband,tk,rho,qc0,qr0,qs0,ns0,   &
+                                       smlf,zh,zv,kdp)
 !-------------------------------------------------------------------------------------
-    implicit none
+      implicit none
       integer, intent(in) :: iband      ! radar scan band (wavelength)
       real(kind=8), intent(in)  :: tk   ! air temperature, K
       real(kind=8), intent(in)  :: rho  ! air density, kg/m^3
@@ -307,16 +361,24 @@ contains
       real(kind=8), intent(out) :: zh   ! horizontal reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: zv   ! vertical reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: kdp  ! specific differential phase, degree/km^-1
-      real, parameter :: thrd = 1./3., dsmin = 2.E-5, dsmax = 1.E-2
-      real :: qs,ns,dbzwl,ltk,ltk2,lqs,lqs2,rhos,s3m,bds,lbds,fds,kdx, &
-              afas,gs1,gs4,lams,lamsmin,lamsmax,mvds,saspr,smlv,dsmm,  &
-              sca0,scala,scalb,scafa,scafb,tc,ora0,orar,ora1,ora2,ora3,&
-              scaw1,rads,zdr,llms,qc,epsin,epss,alphe,lamdz,nerel,     &
-              scawa,scawb,scaw0,scakw,las2,lros,lasp,fdbzs,zhrox,dbzs, &
-              zdrox,zdasp,fzdrs,fkdps,kdrox,kdasp,qr
+      real, parameter :: dsmin = 2.E-5, dsmax = 1.E-2
+      real :: qc,qs,ns,dbzwl,ltk,ltk2,lqs,lqs2,rhos,s3m,afas,gs1,gs4,  &
+              lams,lamsmin,lamsmax,mvds,saspr,smlv,dsmm,sca0,scala,    &
+              scalb,scafa,scafb,tc,ora0,orar,ora1,ora2,ora3,scaw1,rads,&
+              zdr,llms,epsin,epss,alphe,lamdz,nerel,scawa,scawb,scaw0, &
+              scakw,las2,lros,lasp,fdbzs,zhrox,dbzs,zdrox,zdasp,fzdrs, &
+              fkdps,kdrox,kdasp,qr,mvrs,lbds
+      real(kind=8), parameter :: thrd = 1./3.,         zxmin = 1.e-21
+      real(kind=8), parameter :: afamin = 0.,          afamax = 30.
+      real(kind=8), parameter :: afa1 = -0.35897435,   afa2 = 0.010041278
+      real(kind=8), parameter :: afa3 = 1.9349749E-3,  afa4 = -0.067453607
+      real(kind=8), parameter :: afa5 = -5.5693923E-3, afa6 = 0.06376154
+      real(kind=8), parameter :: afb1 = -6.5100404,    afb2 = 0.039597245
+      real(kind=8), parameter :: afb3 = 2.3169628E-3,  afb4 = -0.45856646
+      real(kind=8), parameter :: afb5 = -0.04537631,   afb6 = 0.25713479
 
-      zh = 1.e-21
-      zv = 1.e-21
+      zh = zxmin
+      zv = zxmin
       kdp = 0.
       qs = qs0/1.e3      ! g/kg -> kg/kg
       qc = qc0/1.e3      ! g/kg -> kg/kg
@@ -333,36 +395,28 @@ contains
          lqs  = -1.*LOG(qs)
          lqs2 = lqs*lqs
          IF (tk.LT.273.15) THEN
-            rhos = MIN(650.,EXP(75.401034-25.730216*ltk+0.81467519*lqs+&
+            rhos = MIN(900.,EXP(75.401034-25.730216*ltk+0.81467519*lqs+&
                    2.339118*ltk2+1.9976667E-3*lqs2-0.14086434*ltk*lqs))
          ELSE
-            rhos = EXP(-64808.666+23113.508*ltk-36.46632*lqs-2060.6024*&
-                   ltk2-0.005729458*lqs2+6.5057411*ltk*lqs)
+            rhos = MAX(100.,EXP(-64808.666+23113.508*ltk-36.46632*lqs- &
+                   2060.6024*ltk2-0.005729458*lqs2+6.5057411*ltk*lqs))
          ENDIF
-         rhos = MIN(MAX(rhos,50.),910.)
+         rhos = MIN(MAX(rhos,100.),910.)
 !         smlf = MIN(1.-rhos/1000.,MAX(0.,(MIN(qr,qs)/MAX(qr,qs))**0.3))
-         s3m  = 1.909859317*qs/rhos
-         bds  = MIN(MAX((s3m/ns)**thrd*1.E3,dsmin*1.E3),dsmax*1.E3)
-         IF (tk.GE.273.15) THEN
-            fds = -0.21911541+1.2739845*bds+0.10141003*LOG(ns)+        &
-                  0.30063818*bds**2.-4.3857765E-3*LOG(ns)**2.-         &
-                  7.8801732E-2*bds*LOG(ns)
-         ELSE
-            IF (qc.GE.1.E-8) THEN
-               fds = -1.1527014+2.9067645*bds+0.25316062*LOG(ns)-      &
-                     0.17768557*bds**2.-0.013117292*LOG(ns)**2.-       &
-                     0.17020429*bds*LOG(ns)
-            ELSE
-               fds = -0.2813929+1.7275463*bds+0.045550156*LOG(ns)-     &
-                     0.16526226*bds**2.-1.7699916E-3*LOG(ns)**2.-      &
-                     4.6441257E-2*bds*LOG(ns)
-            ENDIF
-         ENDIF
-         kdx  = MAX(0.223,MIN(0.999,(bds/fds)**3.))
-         afas = (6.*kdx-3.+SQRT(8.*kdx+1.))/(2.-2.*kdx)
-         afas = MIN(MAX(afas,0.),3.E4)
+         mvrs = MIN(dsmax/2.,MAX(dsmin/2.,(1.90986*qs/ns/rhos)**thrd))
+         if (qc.ge.1.e-14.or.ns.lt.0.5) then
+            afas = MIN(afamax,MAX(afamin,(afa1+afa2*LOG(ns)+afa3*      &
+                   LOG(ns)**2.+afa4*LOG(mvrs))/(1.+afa5*LOG(ns)+afa6*  &
+                   LOG(mvrs))))
+         else
+            afas = MIN(afamax,MAX(afamin,(afb1+afb2*LOG(ns)+afb3*      &
+                   LOG(ns)**2.+afb4*LOG(mvrs))/(1.+afb5*LOG(ns)+afb6*  &
+                   LOG(mvrs))))
+         endif
+         if (tk.gt.273.15) afas = MIN(afamax,0.01*EXP(-1.*LOG(mvrs)))
          gs1  = GAMLN(afas+1.)
          gs4  = GAMLN(afas+4.)
+         s3m  = 1.90986*qs/rhos
          lams = (EXP(gs4-gs1)*ns/s3m)**thrd
          lamsmin = (EXP(gs4-gs1))**thrd/dsmax
          lamsmax = (EXP(gs4-gs1))**thrd/dsmin
@@ -377,8 +431,10 @@ contains
       if (qs.ge.1.e-6) then
          llms  = LOG(lams)
          lbds  = LOG(mvds*1.E6)
-         saspr = MAX(0.2,MIN(1.,-5.598876-4.5087011*ltk+5.1416616*lbds+&
-                 1.0361366*ltk2+0.017687308*lbds**2.-0.9649671*ltk*lbds))
+         lros  = LOG(rhos)
+         saspr = MAX(0.2,MIN(1.,1.0207483-0.40684481*lros+0.043489251* &
+                 lros**2.+0.020462134*lbds+0.014926001*lbds**2.-       &
+                 1.1252149E-3*lbds**3.))
          IF (tk.LT.238.16) saspr = 0.7
          IF (smlf.GE.0.01.and.tk.ge.273.16) THEN
             tc    = tk-273.15
@@ -396,6 +452,24 @@ contains
             scaw0 = scawa**2.+4.*scawa+4.+scawb**2.
             scakw = ((scawa**2.+scawa-2.+scawb**2.)/scaw0)**2.+(3.*    &
                     scawb/scaw0)**2.
+            s3m   = 1.90986*qs/rhos
+            mvrs  = MIN(dsmax/2.,MAX(dsmin/2.,(1.90986*qs/ns/          &
+                    rhos)**thrd))
+            afas  = MIN(afamax,MAX(afamin,EXP(-18.420681-0.5*LOG(ns)-  &
+                    2.94*LOG(mvrs))))
+            gs1   = GAMLN(afas+1.)
+            gs4   = GAMLN(afas+4.)
+            lams  = (EXP(gs4-gs1)*ns/s3m)**thrd
+            lamsmin = (EXP(gs4-gs1))**thrd/dsmax
+            lamsmax = (EXP(gs4-gs1))**thrd/dsmin
+            IF (lams.LT.lamsmin) THEN
+               lams = lamsmin
+               ns = s3m*EXP(gs1-gs4+3.*LOG(lams))
+            ELSEIF (lams.GT.lamsmax) THEN
+               lams = lamsmax
+               ns = s3m*EXP(gs1-gs4+3.*LOG(lams))
+            ENDIF
+            mvds  = (EXP(gs4-gs1))**thrd/lams
             smlv  = (rhos/(1.e3/smlf-1.e3+rhos))**0.3
             dsmm  = mvds*1.E3
             saspr = smlf*MAX(0.4,0.9951+2.51E-2*dsmm-3.644E-2*dsmm**2.+&
@@ -415,9 +489,10 @@ contains
             scafa = 1./(scala+scaw1)
             scafb = 1./(scalb+scaw1)
             rads  = ns*EXP(GAMLN(afas+7.)-gs1-6.*llms)
-            zh    = MAX(1.E-28,rads*(ora1*scafb**2.+2.*ora3*scafa*     &
+            zh    = MAX(1.E-21,rads*(ora1*scafb**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafa**2.)/(9.*scakw))
-            zv    = MAX(1.E-28,rads*(ora1*scafa**2.+2.*ora3*scafa*     &
+            zh    = zh*(MAX(0.,-0.1*afas+0.5)*smlf+1.)
+            zv    = MAX(1.E-21,rads*(ora1*scafa**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafb**2.)/(9.*scakw))
             kdp   = 94247.77961/dbzwl*ns*EXP(gs4-gs1-3.*llms)*         &
                     ABS(scafa-scafb)*orar
@@ -443,7 +518,7 @@ contains
             kdrox = 1.974E-5*EXP(1.90820312*lros)
             kdasp = MAX(0.,-0.00958782*lasp**3.-0.10043861*lasp**2.+   &
                     0.22095032*lasp+3.06677159)
-            kdp   = ns*fkdps*kdrox*kdasp*dbzwl/0.11
+            kdp   = ns*fkdps*kdrox*kdasp*0.11/dbzwl
             IF (zv.GT.zh) zv = 0.9999*zh
             zdr   = 10.*LOG10(zh/zv)
          ENDIF
@@ -451,13 +526,12 @@ contains
       endif
 
   end subroutine dualpol_op_snow_tcwa2
-
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
-  subroutine dualpol_op_graup_tcwa2(iband,tk,rho,qc0,qr0,qg0,ng0,  &
-                                    gmlf,zh,zv,kdp)
+      subroutine dualpol_op_graup_tcwa2(iband,tk,rho,qc0,qr0,qg0,ng0,  &
+                                        gmlf,zh,zv,kdp)
 !---------------------------------------------------------------------------------
-    implicit none
+      implicit none
       integer, intent(in) :: iband      ! radar scan band (wavelength)
       real(kind=8), intent(in)  :: tk   ! air temperature, K
       real(kind=8), intent(in)  :: rho  ! air density, kg/m^3
@@ -469,18 +543,25 @@ contains
       real(kind=8), intent(out) :: zh   ! horizontal reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: zv   ! vertical reflectivity, mm^6/m^3
       real(kind=8), intent(out) :: kdp  ! specific differential phase, degree/km^-1
-      real, parameter :: thrd = 1./3., dgmin = 5.E-5, dgmax = 2.E-2
+      real, parameter :: dgmin = 5.E-5, dgmax = 2.E-2
       integer :: ihail
       real :: qg,qc,qr,ng,dbzwl,ltk,ltk2,lqg,rhog,tc,mvg0,dsll,g3m,bdg,&
-              lbdg,fdg,kdx,afag,gg1,gg4,lamg,lamgmin,lamgmax,mvdg,     &
-              gaspr,llmg,llmg2,gmlv,dgmm,lag5,lag52,zdr,epsin,epss,    &
-              alphe,lamdz,nerel,scawa,scawb,scaw0,scakw,ora0,orar,ora1,&
-              ora2,ora3,sca0,scala,scalb,scaw1,scafa,scafb,radg,lag2,  &
-              lrog,lasp,zhrox,fdbzg,dbzg,zdrox,zdasp,fzdrg,fkdpg,kdrox,&
-              kdasp
+              lbdg,afag,gg1,gg4,lamg,lamgmin,lamgmax,mvdg,gaspr,llmg,  &
+              llmg2,gmlv,dgmm,lag5,lag52,zdr,epsin,epss,alphe,lamdz,   &
+              nerel,scawa,scawb,scaw0,scakw,ora0,orar,ora1,ora2,ora3,  &
+              sca0,scala,scalb,scaw1,scafa,scafb,radg,lag2,lrog,lasp,  &
+              zhrox,fdbzg,dbzg,zdrox,zdasp,fzdrg,fkdpg,kdrox,kdasp,mvrg
+      real(kind=8), parameter :: thrd = 1./3.,         zxmin = 1.e-21
+      real(kind=8), parameter :: afamin = 0.,          afamax = 30.
+      real(kind=8), parameter :: afa1 = -0.35897435,   afa2 = 0.010041278
+      real(kind=8), parameter :: afa3 = 1.9349749E-3,  afa4 = -0.067453607
+      real(kind=8), parameter :: afa5 = -5.5693923E-3, afa6 = 0.06376154
+      real(kind=8), parameter :: afb1 = -6.5100404,    afb2 = 0.039597245
+      real(kind=8), parameter :: afb3 = 2.3169628E-3,  afb4 = -0.45856646
+      real(kind=8), parameter :: afb5 = -0.04537631,   afb6 = 0.25713479
 
-      zh = 1.e-21
-      zv = 1.e-21
+      zh = zxmin
+      zv = zxmin
       kdp = 0.
       qg = qg0/1.e3      ! g/kg -> kg/kg
       qc = qc0/1.e3      ! g/kg -> kg/kg
@@ -507,32 +588,24 @@ contains
          ELSE
             ihail = 0
             lqg  = -1.*LOG(qg)
-            rhog = MIN(900.,MAX(100.,EXP(-9.57E-5*lqg**3.+3.077E-3*    &
+            rhog = MIN(900.,MAX(400.,EXP(-9.57E-5*lqg**3.+3.077E-3*    &
                    lqg**2.-6.800923E-2*lqg+6.8175231)))
          ENDIF
 !         gmlf = MIN(1.-rhog/1000.,MAX(0.,(MIN(qr,qg)/MAX(qr,qg))**0.3))
-         g3m = 1.909859317*qg/rhog
-         bdg = MIN(MAX((g3m/ng)**thrd*1.E3,dgmin*1.E3),dgmax*1.E3)
-         IF (tk.GE.273.15) THEN
-            fdg = 0.58006354+0.79661229*bdg-0.18394382*LOG(ng)+        &
-                  0.067371044*bdg**2.+9.832945E-3*LOG(ng)**2.+         &
-                  0.12433055*bdg*LOG(ng)
-         ELSE
-            IF (qc.GE.1.E-8) THEN
-               fdg = 0.17363469+1.5044291*bdg-0.050639722*LOG(ng)+     &
-                     0.015101052*bdg**2.+2.5974719E-3*LOG(ng)**2.+     &
-                     0.01961464*bdg*LOG(ng)
-            ELSE
-               fdg = -4.8667704E-2+1.0504692*bdg+3.1159905E-3*LOG(ng)+ &
-                     0.2509613*bdg**2.+1.8369028E-3*LOG(ng)**2.-       &
-                     2.0083465E-2*bdg*LOG(ng)
-            ENDIF
-         ENDIF
-         kdx  = MAX(0.223,MIN(0.999,(bdg/fdg)**3.))
-         afag = (6.*kdx-3.+SQRT(8.*kdx+1.))/(2.-2.*kdx)
-         afag = MIN(MAX(afag,0.),3.E4)
+         mvrg = MIN(dgmax/2.,MAX(dgmin/2.,(1.90986*qg/ng/rhog)**thrd))
+         if (qc.ge.1.e-14.or.ng.lt.1.) then
+            afag = MIN(afamax,MAX(afamin,(afa1+afa2*LOG(ng)+afa3*      &
+                   LOG(ng)**2.+afa4*LOG(mvrg))/(1.+afa5*LOG(ng)+afa6*  &
+                   LOG(mvrg))))
+         else
+            afag = MIN(afamax,MAX(afamin,(afb1+afb2*LOG(ng)+afb3*      &
+                   LOG(ng)**2.+afb4*LOG(mvrg))/(1.+afb5*LOG(ng)+afb6*  &
+                   LOG(mvrg))))
+         endif
+         if (tk.gt.273.15) afag = MIN(afamax,0.01*EXP(-1.*LOG(mvrg)))
          gg1  = GAMLN(afag+1.)
          gg4  = GAMLN(afag+4.)
+         g3m  = 1.90986*qg/rhog
          lamg = (EXP(gg4-gg1)*ng/g3m)**thrd
          lamgmin = (EXP(gg4-gg1))**thrd/dgmax
          lamgmax = (EXP(gg4-gg1))**thrd/dgmin
@@ -549,10 +622,10 @@ contains
          llmg2 = llmg*llmg
          IF (ihail.EQ.0) THEN
             lbdg  = LOG(mvdg*1.E6)
-            gaspr = MAX(0.4,MIN(1.,-5.598876-4.5087011*ltk+5.1416616*  &
-                    lbdg+1.0361366*ltk2+0.017687308*lbdg**2.-0.9649671*&
-                    ltk*lbdg))
-            IF (tk.LT.238.16) gaspr = 0.7
+            lrog  = LOG(rhog)
+            gaspr = MAX(0.2,MIN(1.,1.0207483-0.40684481*lrog+          &
+                    0.043489251*lrog**2.+0.020462134*lbdg+0.014926001* &
+                    lbdg**2.-1.1252149E-3*lbdg**3.))
          ELSEIF (ihail.EQ.1) THEN
             lag5  = LOG(afag+5.)
             lag52 = lag5*lag5
@@ -577,6 +650,24 @@ contains
             scaw0 = scawa**2.+4.*scawa+4.+scawb**2.
             scakw = ((scawa**2.+scawa-2.+scawb**2.)/scaw0)**2.+(3.*    &
                     scawb/scaw0)**2.
+            g3m   = 1.90986*qg/rhog
+            mvrg  = MIN(dgmax/2.,MAX(dgmin/2.,(1.90986*qg/ng/          &
+                    rhog)**thrd))
+            afag  = MIN(afamax,MAX(afamin,EXP(-18.420681-0.5*LOG(ng)-  &
+                    2.94*LOG(mvrg))))
+            gg1   = GAMLN(afag+1.)
+            gg4   = GAMLN(afag+4.)
+            lamg  = (EXP(gg4-gg1)*ng/g3m)**thrd
+            lamgmin = (EXP(gg4-gg1))**thrd/dgmax
+            lamgmax = (EXP(gg4-gg1))**thrd/dgmin
+            IF (lamg.LT.lamgmin) THEN
+               lamg = lamgmin
+               ng = g3m*EXP(gg1-gg4+3.*LOG(lamg))
+            ELSEIF (lamg.GT.lamgmax) THEN
+               lamg = lamgmax
+               ng = g3m*EXP(gg1-gg4+3.*LOG(lamg))
+            ENDIF
+            mvdg  = (EXP(gg4-gg1))**thrd/lamg
             gmlv  = (rhog/(1.e3/gmlf-1.e3+rhog))**0.3
             dgmm  = mvdg*1.E3
             gaspr = gmlf*MAX(0.4,0.9951+2.51E-2*dgmm-3.644E-2*dgmm**2.+&
@@ -596,9 +687,10 @@ contains
             scafa = 1./(scala+scaw1)
             scafb = 1./(scalb+scaw1)
             radg  = ng*EXP(GAMLN(afag+7.)-gg1-6.*llmg)
-            zh    = MAX(1.E-28,radg*(ora1*scafb**2.+2.*ora3*scafa*     &
+            zh    = MAX(1.E-21,radg*(ora1*scafb**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafa**2.)/(9.*scakw))
-            zv    = MAX(1.E-28,radg*(ora1*scafa**2.+2.*ora3*scafa*     &
+            zh    = zh*(MAX(0.,-0.1*afag+0.5)*gmlf+1.)
+            zv    = MAX(1.E-21,radg*(ora1*scafa**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafb**2.)/(9.*scakw))
             kdp   = 94247.77961/dbzwl*ng*EXP(gg4-gg1-3.*llmg)*         &
                     ABS(scafa-scafb)*orar
@@ -624,7 +716,7 @@ contains
             kdrox = 1.974E-5*EXP(1.90820312*lrog)
             kdasp = MAX(0.,-0.00958782*lasp**3.-0.10043861*lasp**2.+   &
                     0.22095032*lasp+3.06677159)
-            kdp   = ng*fkdpg*kdrox*kdasp*dbzwl/0.11
+            kdp   = ng*fkdpg*kdrox*kdasp*0.11/dbzwl
             IF (zv.GT.zh) zv = 0.9999*zh
             zdr = 10.*LOG10(zh/zv)
          ENDIF
@@ -632,7 +724,6 @@ contains
       endif
 
   end subroutine dualpol_op_graup_tcwa2
-
 !---------------------------------------------------------------------------------------
 !======================================================================
   REAL FUNCTION GAMLN(XX)

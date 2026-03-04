@@ -213,8 +213,8 @@ contains
     real(kind=8) :: zdr_temp
     
     ! Call TCWA2 subroutines for each hydrometeor type
-    call dualpol_op_rain_tcwa2(iband, density_air, qr, nr, zh_rain, zv_rain, kdp_rain)
-    call dualpol_op_ice_tcwa2(iband, temp_air, density_air, qi, ni, zh_ice, zv_ice, kdp_ice)
+    call dualpol_op_rain_tcwa2(iband, density_air, qc, qr, nr, zh_rain, zv_rain, kdp_rain)
+    call dualpol_op_ice_tcwa2(iband, temp_air, density_air, qc, qi, ni, zh_ice, zv_ice, kdp_ice)
     call dualpol_op_snow_tcwa2(iband, temp_air, density_air, qc, qr, qs, ns, smlf, &
                                zh_snow, zv_snow, kdp_snow)
     call dualpol_op_graup_tcwa2(iband, temp_air, density_air, qc, qr, qg, ng, gmlf, &
