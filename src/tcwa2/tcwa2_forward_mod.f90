@@ -488,13 +488,13 @@ contains
                     2.9599665E-6*rhos/smlv
             scafa = 1./(scala+scaw1)
             scafb = 1./(scalb+scaw1)
-            rads  = ns*EXP(GAMLN(afas+7.)-gs1-6.*llms)
+            rads  = ns*EXP(GAMLN(afas+7.)-gs1-6.*LOG(lams))
             zh    = MAX(1.E-21,rads*(ora1*scafb**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafa**2.)/(9.*scakw))
             zh    = zh*(MAX(0.,-0.1*afas+0.5)*smlf+1.)
             zv    = MAX(1.E-21,rads*(ora1*scafa**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafb**2.)/(9.*scakw))
-            kdp   = 94247.77961/dbzwl*ns*EXP(gs4-gs1-3.*llms)*         &
+            kdp   = 94247.77961/dbzwl*ns*EXP(gs4-gs1-3.*LOG(lams))*    &
                     ABS(scafa-scafb)*orar
             IF (zv.GT.zh) zv = 0.9999*zh
             zdr = 10.*LOG10(zh/zv)
@@ -686,13 +686,13 @@ contains
                     2.9599665E-6*rhog/gmlv
             scafa = 1./(scala+scaw1)
             scafb = 1./(scalb+scaw1)
-            radg  = ng*EXP(GAMLN(afag+7.)-gg1-6.*llmg)
+            radg  = ng*EXP(GAMLN(afag+7.)-gg1-6.*LOG(lamg))
             zh    = MAX(1.E-21,radg*(ora1*scafb**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafa**2.)/(9.*scakw))
             zh    = zh*(MAX(0.,-0.1*afag+0.5)*gmlf+1.)
             zv    = MAX(1.E-21,radg*(ora1*scafa**2.+2.*ora3*scafa*     &
                     scafb+ora2*scafb**2.)/(9.*scakw))
-            kdp   = 94247.77961/dbzwl*ng*EXP(gg4-gg1-3.*llmg)*         &
+            kdp   = 94247.77961/dbzwl*ng*EXP(gg4-gg1-3.*LOG(lamg))*    &
                     ABS(scafa-scafb)*orar
             IF (zv.GT.zh) zv = 0.9999*zh
             zdr   = 10.*LOG10(zh/zv)
