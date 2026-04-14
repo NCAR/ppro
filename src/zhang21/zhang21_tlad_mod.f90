@@ -1126,4 +1126,147 @@ contains
     ratx_ad = ratx_ad + ratx_ad_tmp
   end subroutine coef_a_ad
 
+  subroutine melting_scheme_zhang24_tl( &
+    qr_tl, qs_tl, qg_tl, &
+    qms_tl, qmg_tl, qpr_tl, qps_tl, qpg_tl, rats_tl, ratg_tl, &
+    ntr_tl, nts_tl, ntg_tl, &
+    ntms_tl, ntmg_tl, ntpr_tl, ntps_tl, ntpg_tl, &
+    qh_tl, nth_tl, rath_tl, &
+    qmh_tl, qph_tl, ntmh_tl, ntph_tl )
+
+    implicit none
+    real(kind=rd), intent(in) :: qr_tl, qs_tl, qg_tl
+    real(kind=rd), intent(in), optional :: ntr_tl, nts_tl, ntg_tl
+    real(kind=rd), intent(in), optional :: qh_tl, nth_tl
+
+    real(kind=rd), intent(out) :: qms_tl, qmg_tl, qpr_tl, qps_tl, qpg_tl
+    real(kind=rd), intent(out) :: rats_tl, ratg_tl
+    real(kind=rd), intent(out), optional :: ntms_tl, ntmg_tl, ntpr_tl, ntps_tl, ntpg_tl
+    real(kind=rd), intent(out), optional :: rath_tl, qmh_tl, qph_tl, ntmh_tl, ntph_tl
+
+    real(kind=rd) :: qmsl_tl, qmgl_tl, qmhl_tl
+
+    logical      :: dm = .false.
+
+    if (present(ntr_tl) .and. present(nts_tl) .and. present(ntg_tl)) then
+      dm = .true.
+    endif
+
+    qms_tl = 0.5_rd * qms_traj * (qs_tl/qs_traj + qr_tl/qr_traj)
+    qmg_tl = 0.5_rd * qmg_traj * (qg_tl/qg_traj + qr_tl/qr_traj)
+    if (present(qh_tl)) qmh_tl = 0.5_rd * qmh_traj * (qh_tl/qh_traj + qr_tl/qr_traj) 
+
+    rats_tl = (rats_traj / qr_traj) * ((1.0_rd - rats_traj) * qr_tl - rats_traj * qs_tl)
+    ratg_tl = (ratg_traj / qr_traj) * ((1.0_rd - ratg_traj) * qr_tl - ratg_traj * qg_tl)
+    if (present(qh_tl)) rath_tl = (rath_traj / qr_traj) * ((1.0_rd - rath_traj) * qr_tl - rath_traj * qh_tl)
+
+    qmsl_tl = qms_traj * rats_tl + qms_tl * rats_traj
+    qmgl_tl = qmg_traj * ratg_tl + qmg_tl * ratg_traj
+    if (present(qh_tl)) qmhl_tl = qmh_traj * rath_tl + qmh_tl * rath_traj
+
+    qpr_tl = qr_tl - qmsl_tl - qmgl_tl
+    qps_tl = qs_tl - qms_tl + qmsl_tl
+    qpg_tl = qg_tl - qmg_tl + qmgl_tl
+    if (present(qh_tl)) then
+      qpr_tl = qpr_tl - qmhl_tl
+      qpg_tl = qh_tl - qmh_tl + qmhl_tl
+    endif
+
+    if (dm) then
+      ntms_tl = 0.5_rd * ntms_traj * (nts_tl / nts_traj + ntr_tl / ntr_traj)
+      ntmg_tl = 0.5_rd * ntmg_traj * (ntg_tl / ntg_traj + ntr_tl / ntr_traj)
+      ntpr_tl = ntr_tl
+      ntps_tl = nts_tl
+      ntpg_tl = ntg_tl
+      if (present(nth_tl)) then
+         ntms_tl = 0.5_rd * ntmh_traj * (nth_tl / nth_traj + ntr_tl / ntr_traj)
+         ntph_tl = nth_tl
+      endif
+    endif
+
+  end subroutine melting_scheme_zhang24_tl
+
+  subroutine melting_scheme_zhang24_ad( &
+    qr_ad, qs_ad, qg_ad, &
+    qms_ad, qmg_ad, qpr_ad, qps_ad, qpg_ad, rats_ad, ratg_ad, &
+    ntr_ad, nts_ad, ntg_ad, &
+    ntms_ad, ntmg_ad, ntpr_ad, ntps_ad, ntpg_ad, &
+    qh_ad, nth_ad, rath_ad, &
+    qmh_ad, qph_ad, ntmh_ad, ntph_ad )
+    
+    implicit none
+    real(kind=rd), intent(inout) :: qr_ad, qs_ad, qg_ad
+    real(kind=rd), intent(inout), optional :: ntr_ad, nts_ad, ntg_ad
+    real(kind=rd), intent(inout), optional :: qh_ad, nth_ad
+
+    real(kind=rd), intent(in) :: qms_ad, qmg_ad, qpr_ad, qps_ad, qpg_ad
+    real(kind=rd), intent(in) :: rats_ad, ratg_ad
+    real(kind=rd), intent(in), optional :: ntms_ad, ntmg_ad, ntpr_ad, ntps_ad, ntpg_ad
+    real(kind=rd), intent(in), optional :: qmh_ad, qph_ad, rath_ad, ntmh_ad, ntph_ad
+
+    real(kind=rd) :: qmsl_ad, qmgl_ad, qmhl_ad
+    real(kind=rd) :: qms_ad_tmp, qmg_ad_tmp, qmh_ad_tmp
+    real(kind=rd) :: rats_ad_tmp, ratg_ad_tmp, rath_ad_tmp
+
+    logical      :: dm = .false.
+
+    if (present(ntr_ad) .and. present(nts_ad) .and. present(ntg_ad)) then
+      dm = .true.
+    endif
+
+    qr_ad = qr_ad + qpr_ad
+    qs_ad = qs_ad + qps_ad 
+    qg_ad = qg_ad + qpg_ad
+    if (present(qh_ad)) qh_ad = qh_ad + qph_ad
+
+    qms_ad_tmp = qms_ad - qps_ad
+    qmg_ad_tmp = qmg_ad - qpg_ad
+    if (present(qh_ad)) qmh_ad_tmp = qmh_ad - qph_ad
+
+    qmsl_ad = qps_ad - qpr_ad
+    qmgl_ad = qpg_ad - qpr_ad
+    if (present(qh_ad)) qmhl_ad = qph_ad - qpr_ad
+
+    qms_ad_tmp = qms_ad_tmp + rats_traj * qmsl_ad
+    qmg_ad_tmp = qmg_ad_tmp + ratg_traj * qmgl_ad
+    if (present(qh_ad)) qmh_ad_tmp = qmh_ad_tmp + rath_traj * qmhl_ad
+
+    rats_ad_tmp = rats_ad + qms_traj * qmsl_ad
+    ratg_ad_tmp = ratg_ad + qmg_traj * qmgl_ad
+    if (present(qh_ad)) rath_ad_tmp = rath_ad + qmh_traj * qmhl_ad
+
+    qr_ad = qr_ad + (rats_traj / qr_traj) * (1.0_rd - rats_traj) * rats_ad_tmp + &
+                    (ratg_traj / qr_traj) * (1.0_rd - ratg_traj) * ratg_ad_tmp
+    
+    qs_ad = qs_ad - (rats_traj / qr_traj) * rats_traj * rats_ad_tmp
+    qg_ad = qg_ad - (ratg_traj / qr_traj) * ratg_traj * ratg_ad_tmp
+ 
+    if (present(qh_ad)) then
+       qr_ad = qr_ad + (rath_traj / qr_traj) * (1.0_rd - rath_traj) * rath_ad_tmp
+       qh_ad = qh_ad - (rath_traj / qr_traj) * rath_traj * rath_ad_tmp
+    endif
+
+    qr_ad = qr_ad + 0.5_rd * (qms_traj / qr_traj * qms_ad_tmp + qmg_traj / qr_traj * qmg_ad_tmp)
+    qs_ad = qs_ad + 0.5_rd * qms_traj / qs_traj * qms_ad_tmp
+    qg_ad = qg_ad + 0.5_rd * qmg_traj / qg_traj * qmg_ad_tmp
+ 
+    if (present(qh_ad)) then
+       qr_ad = qr_ad + 0.5_rd * (qmh_traj / qr_traj * qmh_ad_tmp)
+       qh_ad = qh_ad + 0.5_rd * qmh_traj / qh_traj * qmh_ad_tmp
+    end if
+ 
+    if (dm) then
+      ntr_ad = ntr_ad + ntpr_ad 
+      nts_ad = nts_ad + ntps_ad
+      ntg_ad = ntg_ad + ntpg_ad
+      if (present(nth_ad)) nth_ad = nth_ad + ntph_ad
+      ntr_ad = ntr_ad + 0.5_rd / ntr_traj * (ntms_traj*ntms_ad + ntmg_traj*ntmg_ad)
+      if (present(nth_ad)) ntr_ad = ntr_ad + 0.5_rd / ntr_traj * ntmh_traj*ntmh_ad
+      nts_ad = nts_ad + 0.5_rd / nts_traj * ntms_traj*ntms_ad
+      ntg_ad = ntg_ad + 0.5_rd / ntg_traj * ntmg_traj*ntmg_ad
+      if (present(nth_ad)) nth_ad = nth_ad + 0.5_rd / nth_traj * ntmh_traj*ntmh_ad
+    endif
+
+  end subroutine melting_scheme_zhang24_ad
+
 end module zhang21_tlad_mod

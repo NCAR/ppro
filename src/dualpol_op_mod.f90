@@ -59,6 +59,8 @@ module dualpol_op_mod
   public :: tuning_dm_pure_snow, tuning_dm_pure_graupel, tuning_dm_pure_hail
   public :: melting_rain_exponent
   public :: tuning_melt_frac_snow, tuning_melt_frac_graupel, tuning_melt_frac_hail
+  public :: melting_exp_rain, melting_exp_ice
+  public :: fraction_exp_rain, fraction_exp_ice
 
 contains
 

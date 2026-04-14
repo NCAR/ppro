@@ -223,7 +223,7 @@ Unified interface providing:
 **zhang21_forward_mod.f90** - Exponential PSD + T-matrix polynomial operator:
 - `zhang21_init_coefs()`: Load polynomial coefficients (S-band/C-band)
 - `zhang21_compute_point()`: Compute using polynomial functions of Dm and Wx
-- `melting_scheme_liu24()`: Melting layer treatment
+- `melting_model_liu24()`: Melting layer treatment
 - `dualpol_op_rain/icephase/total()`: Individual hydrometeor calculations
 
 **zhang21_tlad_mod.f90** - Tangent-linear and adjoint for Variational DA applications
