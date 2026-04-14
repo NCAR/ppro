@@ -16,11 +16,13 @@ C-band coefficients:
   - cband_graupel_coefs.txt
   - cband_hail_coefs.txt
 
-These files contain the lookup table coefficients based on:
+S-band coefficients are based on:
   Zhang, G., J. Gao, and M. Du, 2021: Parameterized forward operators 
   for simulation and assimilation of polarimetric radar data with 
   numerical weather predictions. Adv. Atmos. Sci., 38(5), 737−754.
 
-Note: You will need to obtain these coefficient files separately and 
-place them in this directory before using the PPRO library.
+C-band coefficients are based on:
+  Kong et al., 2026: Assimilation of Radar Radial Velocity and 
+  Polarimetric Observations Using LETKF within MPAS-JEDI: A Case Study 
+  of an Afternoon Thunderstorm in Taiwan. Mon. Wea. Rev., submitted.
 
