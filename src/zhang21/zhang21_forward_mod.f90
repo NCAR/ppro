@@ -71,7 +71,7 @@ module zhang21_forward_mod
   !   - balance > ratio_high -> factor = 1 (full melting)
   !   - in between           -> linear transition
   ! ============================================================================
-  logical, save :: enable_melting_transition = .true.   ! Default enabled, can be overridden via YAML
+  logical, save :: enable_melting_transition = .false.  ! Default disabled, can be overridden via YAML
   
   ! Transition parameters (configurable via YAML)
   real(kind=8), save :: snow_ratio_low    = 0.01d0    ! factor=0 below this
@@ -109,7 +109,7 @@ module zhang21_forward_mod
   ! - At higher temperatures (> 0°C), larger particles (> 2 mm) can still melt
   ! - Uses smooth transition function to avoid discontinuities
   ! ============================================================================
-  logical, save :: enable_dm_melting_limit = .true.   ! Default enabled
+  logical, save :: enable_dm_melting_limit = .false.  ! Default disabled
   real(kind=8), save :: dm_melting_transition_width = 0.5d0  ! mm, controls smoothness of transition
   
   public :: enable_dm_melting_limit
